@@ -1,4 +1,3 @@
-import sys
 import os
 import time
 
@@ -8,11 +7,7 @@ import pyvista as pv
 from pyvistaqt import QtInteractor
 
 from widgets.panels.collapse import CollapsibleBox
-
-
-# Añadir ../../ (es decir, src/) al path para importar desde la raíz del proyecto
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-
+from PySide6.QtWidgets import QMessageBox
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout, QLineEdit, QLabel,
@@ -41,6 +36,7 @@ from utils.ui_helpers import _input_with_unit
 from project_paths import data_file, model, temp_data_file, project_file, worker
 from PySide6.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QFrame
 from PySide6.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QFrame
+from utils.loading_bar import ProgressBarWidget
 
 class FieldOptionsPanel(QWidget):
     def __init__(self, main_window):
@@ -73,6 +69,15 @@ class FieldOptionsPanel(QWidget):
         self.charge_density_check.setToolTip("Activa la resolución de Poisson incluyendo densidad electrónica.")
         self.charge_density_check.setChecked(False)
         self.charge_density_check.setStyleSheet(checkbox_parameters_style())
+        # self.charge_density_check.stateChanged.connect(
+        #     lambda state: self.main_window.launch_worker(
+        #         LoaderWorker(
+        #             mode="field",
+        #             params={"validate_density": (state == Qt.Checked)}
+        #         ),
+        #         self.on_field_loaded
+        #     )
+        # )
         sim_layout.addRow(self.charge_density_check)
 
         field_box.setLayout(sim_layout)
@@ -83,11 +88,11 @@ class FieldOptionsPanel(QWidget):
         actions_box = QGroupBox("Acciones de simulación")
         actions_box.setStyleSheet(box_render_style())
         actions_layout = QHBoxLayout()
-        update_btn = QPushButton("Actualizar campo")
-        update_btn.setStyleSheet(button_parameters_style())
-        update_btn.setToolTip("Ejecuta el cálculo del campo eléctrico con los parámetros actuales.")
-        update_btn.clicked.connect(self.on_update_clicked_Electric_field)
-        actions_layout.addWidget(update_btn)
+        self.update_btn = QPushButton("Actualizar campo")
+        self.update_btn.setStyleSheet(button_parameters_style())
+        self.update_btn.setToolTip("Ejecuta el cálculo del campo eléctrico con los parámetros actuales.")
+        self.update_btn.clicked.connect(self.on_update_clicked_Electric_field)
+        actions_layout.addWidget(self.update_btn)
         actions_box.setLayout(actions_layout)
         layout.addWidget(actions_box)
 
@@ -129,9 +134,13 @@ class FieldOptionsPanel(QWidget):
         self.view_direction_combo.setStyleSheet(box_render_style())
         self.view_direction_combo.currentTextChanged.connect(self.change_view_direction)
         vis_layout.addRow(lbl_viewdir, self.view_direction_combo)
-
         vis_box.setLayout(vis_layout)
         layout.addWidget(vis_box)
+
+        self.progress_bar = ProgressBarWidget("Calculando campo eléctrico...")
+        layout.addWidget(self.progress_bar)
+        self.progress_bar.hide()
+
 
         # ──────────────────────────────────────────────────────────────
         # 4. Visualizador 3D
@@ -187,8 +196,7 @@ class FieldOptionsPanel(QWidget):
         self.simulation_state.voltage = voltaje
         self.simulation_state.voltage_cathode = voltaje_Cath
 
-        new_params = (voltaje, voltaje_Cath)
-
+        new_params = [voltaje, voltaje_Cath]
         params = {
             "voltage": voltaje,
             "voltage_cathode": voltaje_Cath,
@@ -198,22 +206,33 @@ class FieldOptionsPanel(QWidget):
         if new_params != self.simulation_state.prev_params_field or self.simulation_state.field_outdated:
             print("🔄 ¡Parámetros cambiaron:", new_params)
             self.simulation_state.prev_params_field = new_params
-            self.simulation_state.field_outdated = False
             self.simulation_state.save_to_json(model("simulation_state.json"))
-            # self.run_solver_in_subprocess(self.on_field_loaded, params)
+            self.progress_bar.start("Calculando campo eléctrico...")
+            self.update_btn.setEnabled(False)
+
             self.run_process_and_reload(
                 process_script="electric_field_process.py",
                 loader_mode="field",
-                finished_callback=self.on_field_loaded
+                finished_callback= self.on_field_loaded_file
             )
             return
         else:
+            from PySide6.QtWidgets import QMessageBox
             print("⚠️ No se han realizado cambios en los parámetros del campo.")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Sin cambios detectados")
+            msg.setText("Debe cambiar los parámetros para ejecutar una nueva simulación del campo eléctrico.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.exec()
+
         self.loader_worker_field = LoaderWorker(
             mode="field",
             params=params,
         )
         self.main_window.launch_worker(self.loader_worker_field, self.on_field_loaded)
+
         print("Finalizando con la actualización")
         self.simulation_state.print_state()
 
@@ -239,8 +258,14 @@ class FieldOptionsPanel(QWidget):
         return resultados
 
     def on_field_loaded(self, data):
+        self.current_field = data
+        self.update_view()
+
+    def on_field_loaded_file(self, data):
         self.simulation_state.field_outdated = False
         self.current_field = data
+        self.simulation_state.field_outdated = False
+        self.simulation_state.save_to_json(model("simulation_state.json"))
         self.update_view()
 
     def on_density_loaded(self, data):
@@ -290,7 +315,7 @@ class FieldOptionsPanel(QWidget):
             )
             self.field_viewer.add_mesh(
                 glyphs,
-                cmap="magma",                   # paleta académica
+                cmap="plasma",                   # paleta académica
                 scalars="magnitude",            # colorea por magnitud del campo
                 clim=[
                     self.current_field["magnitude"].min(),
@@ -310,7 +335,7 @@ class FieldOptionsPanel(QWidget):
             inverted_pos = (2*fp[0] - pos[0], 2*fp[1] - pos[1], 2*fp[2] - pos[2])
             self.field_viewer.camera_position = [inverted_pos, fp, viewup]
             self.field_viewer.reset_camera()
-            self.field_viewer.add_text("Campo eléctrico (Vista isometrica)", position='upper_edge', font_size=12, color='black')
+            self.field_viewer.add_text("Campo eléctrico", position='upper_edge', font_size=6, color='black')
         elif mode == "2D Slice ZY":
             # ---- PROYECTAR EN EL PLANO X = x_plane ----
             x_plane = self.current_z_value
@@ -346,7 +371,7 @@ class FieldOptionsPanel(QWidget):
             scale=False,
             factor=0.01)
             self.field_viewer.add_mesh(    glyphs,
-            cmap="magma",            # Paleta neutra y académica
+            cmap="plasma",            # Paleta neutra y académica
             scalars="magnitude",
             clim=[
                 self.current_field["magnitude"].min(),
@@ -512,6 +537,7 @@ class FieldOptionsPanel(QWidget):
         except Exception as e:
             print(f"Error generando corte ZY en z={z}: {e}")
             return None
+
     def switch_dataset(self, view_name):
         if view_name == "Electric Field":
             self.visualize_field()
@@ -534,45 +560,6 @@ class FieldOptionsPanel(QWidget):
             worker = LoaderWorker(mode="density")
             self.main_window.launch_worker(worker, self.on_density_loaded)
 
-    # def run_solver_in_subprocess(self, finished_callback):
-    #     import subprocess
-    #     from PySide6.QtCore import QTimer
-
-
-    #     args = [
-    #         'python3', worker('electric_field_process.py'),  # Ajusta el path si es necesario
-    #     ]
-
-    #     self.solver_start_time = time.perf_counter()
-    #     try:
-    #         self.process = subprocess.Popen(args)
-    #         print(f"[DEBUG] Proceso lanzado, PID: {self.process.pid}")
-    #     except Exception as e:
-    #         print(f"[ERROR] Fallo al lanzar el proceso: {e}")
-    #         self.process = None
-    #         return
-
-    #     self.solver_finished = False
-
-    #     def check_output():
-    #         if self.process is None:
-    #             self.timer.stop()
-    #             return
-    #         if self.process.poll() is not None:
-    #             self.timer.stop()
-    #             self.solver_finished = True
-    #             elapsed = time.perf_counter() - self.solver_start_time
-    #             print(f"[DEBUG] Proceso terminado correctamente. Tiempo total: {elapsed:.2f} s")
-    #             self.process = None
-    #             self.load_field_with_worker(finished_callback, {
-    #                 "validate_density": 
-    #             })
-
-    #     self.timer = QTimer()
-    #     self.timer.timeout.connect(check_output)
-    #     self.timer.start(300)
-
-
     def run_process_and_reload(self, process_script, loader_mode, finished_callback):
         args = ['python3', worker(process_script)]
         self.process = subprocess.Popen(args)
@@ -587,12 +574,40 @@ class FieldOptionsPanel(QWidget):
                 self.timer.stop()
                 self.process_finished = True
                 elapsed = time.perf_counter() - self.process_start_time
-                print(f"[DEBUG] Proceso terminado en {elapsed:.2f} s")
+
+                stdout, stderr = self.process.communicate()
+                exit_code = self.process.returncode
                 self.process = None
-                loader = LoaderWorker(mode=loader_mode, params={"validate_density": self.charge_density_check.isChecked()})
-                self.main_window.launch_worker(loader, finished_callback)
+
+                self.progress_bar.finish()
+                self.update_btn.setEnabled(True)
+
+                if exit_code != 0:
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Critical)
+                    msg.setWindowTitle("Error en el subproceso")
+                    msg.setText(f"El proceso finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.exec()
+                    self.update_btn.setEnabled(True)
+                    self.progress_bar.finish()
+                    print(f"[ERROR] Subproceso falló: {stderr}")
+                    self.simulation_state.prev_params_field = [None] * len(self.simulation_state.prev_params_field)
+                    self.simulation_state.save_to_json(model("simulation_state.json"))
+                else:
+                    print(f"[INFO] Proceso terminado exitosamente en {elapsed:.2f} s")
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Information)
+                    msg.setWindowTitle("Proceso completado (Campo electrico)")
+                    msg.setText("✅ El proceso se completó correctamente.\nApp is ready.")
+                    msg.exec()
+
+                    loader = LoaderWorker(
+                        mode=loader_mode,
+                        params={"validate_density": self.charge_density_check.isChecked()}
+                    )
+                    self.main_window.launch_worker(loader, finished_callback)
 
         self.timer = QTimer()
         self.timer.timeout.connect(check_output)
         self.timer.start(300)
-

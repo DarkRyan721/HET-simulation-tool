@@ -215,3 +215,5 @@ if __name__ == "__main__":
     # 3. Realizar el render
 
     pic.render()
+
+    print("pcccccccccccccccc", pic.specific_impulse)

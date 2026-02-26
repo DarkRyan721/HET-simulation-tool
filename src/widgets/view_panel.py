@@ -1,12 +1,5 @@
-import sys
-import os
-# Añadir ../../ (es decir, src/) al path para importar desde la raíz del proyecto
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
-
 import PySide6.QtWidgets as QtW
-from PySide6.QtWidgets import QStackedWidget
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QPushButton, QSizePolicy
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import QStackedWidget, QFrame, QVBoxLayout
 from PySide6.QtCore import QTimer
 import meshio
 import numpy as np
@@ -18,19 +11,35 @@ from utils.loader_thread import LoaderWorker
 
 
 class ViewPanel(QFrame):
+    """
+    A container widget that manages multiple 3D view widgets using a QStackedWidget.
+
+    This panel holds different visualization widgets (mesh, field, magnetic, simulation),
+    allowing switching between them efficiently.
+
+    Attributes:
+        main_window: Reference to the main application window, used to access other panels.
+        view_stack (QStackedWidget): Stacked widget holding all viewer widgets.
+        viewers (dict): Dictionary mapping viewer names to their widget instances.
+        current_data: Reference to the currently displayed data (optional).
+    """
+
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+
         self.setObjectName("VPartFrame")
         self.setStyleSheet("background-color: #D3D3D3; border-left: 2px solid #818589;")
 
+        # Set up vertical layout with padding
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
 
-        # 🧱 Stack de vistas
+        # Initialize the stacked widget that will hold different views
         self.view_stack = QStackedWidget(self)
         layout.addWidget(self.view_stack)
 
+        # Map viewer keys to existing viewer widgets from main_window's panels
         self.viewers = {
             "mesh": self.main_window.home_panel.home_viewer,
             "field": self.main_window.field_panel.field_viewer,
@@ -38,51 +47,44 @@ class ViewPanel(QFrame):
             "simulation": self.main_window.simulation_panel.simulation_viewer
         }
 
-        for viewer in self.viewers.values():
-            print(viewer)
+        # Add each viewer widget to the stacked widget and log the action
+        for name, viewer in self.viewers.items():
+            print(f"DEBUG: Adding viewer '{name}' to view stack: {viewer}")
             self.view_stack.addWidget(viewer)
 
-        self.current_data = None  # Útil para referenciar luego
-
-    # def update_viewer(self, data, viewer_name="mesh"):
-    #     if viewer_name not in self.viewers:
-    #         print(f"⚠️ Viewer '{viewer_name}' no registrado.")
-    #         return
-
-    #     self.current_data = data
-    #     viewer = self.viewers[viewer_name]
-    #     viewer.clear()
-    #     viewer.add_mesh(data, color="white", show_edges=True)
-    #     self.view_stack.setCurrentWidget(viewer)
-
-    #     # Aplicar estilo si está en 'home_panel'
-    #     if viewer_name == "mesh":
-    #         print("⚠️ Aplicando estilo a home_viewer")
-    #         QTimer.singleShot(0, lambda: self.main_window.home_panel.on_mesh_loaded())
-    #     elif viewer_name == "field":
-    #         print("⚠️ Aplicando estilo a field_viewer")
-    #         QTimer.singleShot(0, lambda: self.main_window.field_panel.on_field_loaded())
-    #         # Aplicar estilo si es necesario
+        self.current_data = None  # Store reference to current visualized data for potential future use
 
     def switch_view(self, name: str):
+        """
+        Switch the currently displayed viewer by name.
+
+        Args:
+            name (str): The key name of the viewer to display.
+
+        Logs a warning if the requested viewer is not registered.
+        """
         if name in self.viewers:
+            print(f"DEBUG: Switching view to '{name}'.")
             self.view_stack.setCurrentWidget(self.viewers[name])
         else:
-            print(f"⚠️ Viewer '{name}' no encontrado.")
+            print(f"WARNING: Viewer '{name}' not found in registered viewers.")
 
-    # def update_mesh_viewer(self, mesh):
-    #     self.update_viewer(mesh, viewer_name="mesh")
+    def add_viewer(self, name: str, widget: QtW.QWidget):
+        """
+        Add a new viewer widget to the stack or replace an existing one by the same name.
 
-    # def update_field_viewer(self, field):
-    #     self.update_viewer(field, viewer_name="field")
+        Args:
+            name (str): Unique identifier for the viewer.
+            widget (QWidget): The widget instance to add.
 
-    # def update_magnetic_viewer(self, field):
-    #     self.update_viewer(field, viewer_name="magnetic")
-
-    def add_viewer(self, name, widget):
+        If a viewer with the given name exists, it will be removed before adding the new one.
+        Logs all relevant actions.
+        """
         if name in self.viewers:
-            # Si ya existe un viewer con ese nombre, quítalo primero
+            print(f"DEBUG: Removing existing viewer '{name}' before adding new widget.")
             self.view_stack.removeWidget(self.viewers[name])
             del self.viewers[name]
+
         self.viewers[name] = widget
         self.view_stack.addWidget(widget)
+        print(f"DEBUG: Added viewer '{name}' to view stack: {widget}")

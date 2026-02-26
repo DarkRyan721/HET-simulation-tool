@@ -1,9 +1,8 @@
-import sys
 import os
 import time
 import numpy as np
 from pyvistaqt import QtInteractor
-
+from PySide6.QtWidgets import QMessageBox
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout, QLabel, QLineEdit,
     QPushButton, QCheckBox
@@ -12,6 +11,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout, QLineEdit, QLabel,
     QHBoxLayout, QPushButton, QCheckBox, QSlider, QComboBox
 )
+from PySide6.QtCore import QTimer
+import subprocess
+import json
+
 from PySide6.QtCore import QThread, Signal, QObject
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QStyle
@@ -22,11 +25,9 @@ from PySide6.QtCore import QTimer
 from project_paths import data_file, model, worker
 from widgets.panels.collapse import CollapsibleBox
 from PySide6.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QFrame
+from utils.loading_bar import ProgressBarWidget
 
-# Acceso al path raíz
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-
-# ───── Módulos propios ─────
+from models.simulation_state import SimulationState
 from simulation_engine_viewer import Simulation
 from utils.ui_helpers import _input_with_unit
 from gui_styles.stylesheets import *
@@ -41,7 +42,6 @@ class SimulationOptionsPanel(QWidget):
         self.setStyleSheet("background-color: transparent;")
         layout = QVBoxLayout(self)
 
-        # Grupo: Parámetros básicos de simulación
         sim_box = QGroupBox("🧮 Parámetros de Simulación")
         sim_box.setStyleSheet(box_render_style())
         sim_layout = QFormLayout()
@@ -62,7 +62,6 @@ class SimulationOptionsPanel(QWidget):
         sim_layout.addRow(lbl_n_particles, self.input_N_particles)
         sim_layout.addRow(lbl_frames, self.input_frames)
 
-        # Combo para tipo de gas
         lbl_gas = QLabel("Gas de trabajo:")
         lbl_gas.setToolTip("Selecciona el gas con el que se simula la descarga.")
         self.view_mode_combo = QComboBox()
@@ -77,7 +76,6 @@ class SimulationOptionsPanel(QWidget):
         sim_box.setLayout(sim_layout)
         layout.addWidget(sim_box)
 
-        # ---- Botones de control de simulación ----
         controls_box = QGroupBox("Controles de simulación")
         controls_box.setStyleSheet(box_render_style())
         controls_layout = QHBoxLayout()
@@ -90,22 +88,17 @@ class SimulationOptionsPanel(QWidget):
 
         self.pause_btn = QPushButton("⏸️ Run")
         self.pause_btn.setStyleSheet(button_parameters_style())
-        self.pause_btn.setCheckable(True)
         self.pause_btn.clicked.connect(self.on_pause_resume_clicked)
         controls_layout.addWidget(self.pause_btn)
 
-        # ----------- Aquí está el nuevo checkbox ------------
         self.enable_checkbox = QCheckBox("Habilitar computacion grafica")
-        self.enable_checkbox.setChecked(True)  # o False según lo que desees por defecto
+        self.enable_checkbox.setChecked(self.simulation_state.GPU_ACTIVE)
         self.enable_checkbox.setToolTip("Activa o desactiva el uso de CUDA (Nvidia).")
         controls_layout.addWidget(self.enable_checkbox)
-        # Puedes conectar a una función si quieres hacer algo cuando cambie el estado:
-        # -----------------------------------------------------
 
         controls_box.setLayout(controls_layout)
         layout.addWidget(controls_box)
 
-        # ---- Opciones avanzadas ----
         advanced_toggle = QPushButton("Opciones avanzadas")
         advanced_toggle.setCheckable(True)
         advanced_toggle.setChecked(False)
@@ -140,25 +133,31 @@ class SimulationOptionsPanel(QWidget):
 
         advanced_toggle.clicked.connect(toggle_advanced)
         layout.addWidget(advanced_toggle)
+
         layout.addWidget(advanced_content)
 
+        self.progress_bar = ProgressBarWidget("Cargando simulación...")
+        layout.addWidget(self.progress_bar)
+        self.progress_bar.hide()
 
-        # ---- Salida de la simulación ----
         output_box = QGroupBox("📊 Resultados de Simulación")
         output_box.setStyleSheet(box_render_style())
         output_layout = QVBoxLayout(output_box)
-        self.label_impulso = QLabel("Impulso específico: <b>---</b>")
-        self.label_tiempo = QLabel("Tiempo de simulación: <b>---</b>")
-        self.label_frames = QLabel("Número de frames: <b>---</b>")
+        self.label_impulso = QLabel(f"Impulso específico: <b>{self.simulation_state.impulso_especifico}</b>")
+        self.label_tiempo = QLabel(f"Tiempo de simulación: <b>{self.simulation_state.time_simulation}</b>")
+        self.label_frames = QLabel(f"Número de frames: <b>{self.simulation_state.frames}</b>")
         output_layout.addWidget(self.label_impulso)
         output_layout.addWidget(self.label_tiempo)
         output_layout.addWidget(self.label_frames)
         layout.addWidget(output_box)
 
+        self.progress_bar = ProgressBarWidget("Simulando partículas...")
+        layout.addWidget(self.progress_bar)
+        self.progress_bar.hide()
+
         layout.addStretch()
         self.setLayout(layout)
 
-        # Inicialización de variables de simulación (como antes)
         self.simulation_viewer = QtInteractor(self)
         self.simulation_instance = Simulation(plotter=self.simulation_viewer)
         self.simulation_running = False
@@ -171,6 +170,12 @@ class SimulationOptionsPanel(QWidget):
         self.simulation_worker.finished.connect(self.simulation_worker.deleteLater)
         self.simulation_thread.finished.connect(self.simulation_thread.deleteLater)
         self.loader_worker_simulation = None
+
+    def _reload_shared_state(self):
+        """Reload state from disk and keep a single shared object across all panels."""
+        loaded_state = SimulationState.load_from_json(model("simulation_state.json"))
+        self.main_window.simulation_state.__dict__.update(loaded_state.__dict__)
+        self.simulation_state = self.main_window.simulation_state
 
     def on_run_simulation(self):
         campos = {
@@ -191,7 +196,7 @@ class SimulationOptionsPanel(QWidget):
 
         N_particles = int(valores["N_particles"])
         frames = int(valores["frames"])
-        alpha = valores["alpha"]      # Puede ser float o None
+        alpha = valores["alpha"]
         sigma_ion = valores["sigma_ion"]
         dt = valores["dt"]
 
@@ -200,10 +205,10 @@ class SimulationOptionsPanel(QWidget):
         self.simulation_state.alpha = alpha
         self.simulation_state.sigma_ion = sigma_ion
         self.simulation_state.dt = dt
+        self.simulation_state.GPU_ACTIVE = self.enable_checkbox.isChecked()
 
         gas_combo_index = self.view_mode_combo.currentIndex()
         gas_combo_text = self.view_mode_combo.currentText()
-        # Opcional: Normaliza el valor para enviarlo limpio
         if "Xenón" in gas_combo_text:
             gas = "Xenon"
         elif "Argón" in gas_combo_text:
@@ -213,9 +218,8 @@ class SimulationOptionsPanel(QWidget):
         elif "Kriptón" in gas_combo_text or "Krypton" in gas_combo_text:
             gas = "Krypton"
         else:
-            gas = "Xenon"  # Por defecto
+            gas = "Xenon"
 
-        # O si quieres, usa un diccionario de mapeo
         gas_map = {
             0: "Xenon",
             1: "Argon",
@@ -223,18 +227,35 @@ class SimulationOptionsPanel(QWidget):
             3: "Krypton"
         }
         gas = gas_map.get(gas_combo_index, "Xenon")
+        self.simulation_state.gas = gas
 
-        new_params = (N_particles, frames, alpha, sigma_ion, dt, gas)
+        new_params = (N_particles, frames, alpha, sigma_ion, dt, gas, self.enable_checkbox.isChecked())
 
         if new_params != self.simulation_state.prev_params_simulation:
             print("🔄 Parámetros de simulación cambiaron:", new_params)
             self.simulation_state.prev_params_simulation = new_params
             self.simulation_state.save_to_json(model("simulation_state.json"))
+            self.progress_bar.start("Ejecutando simulación...")
             self.run_solver_in_subprocess()
         else:
-            print("⚠️ No se han realizado cambios en los parámetros.")
+            from PySide6.QtWidgets import QMessageBox
+            print("⚠️ No se han realizado cambios en los parámetros de simulación.")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Sin cambios detectados")
+            msg.setText("Debe cambiar los parámetros para ejecutar una nueva simulación.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.exec()
 
-
+    def update_simulate_button_state(self):
+        """Deshabilita el botón si alguno de los campos está desactualizado."""
+        if self.simulation_state.field_outdated or self.simulation_state.magnetic_outdated:
+            self.start_btn.setEnabled(False)
+            self.start_btn.setToolTip("Actualice el campo eléctrico y magnético antes de simular.")
+        else:
+            self.start_btn.setEnabled(True)
+            self.start_btn.setToolTip("Inicia o reanuda la simulación de partículas.")
 
     def validar_numeros(self, campos, opcionales=None):
         if opcionales is None:
@@ -258,8 +279,7 @@ class SimulationOptionsPanel(QWidget):
         return resultados
 
     def run_solver_in_subprocess(self):
-        import subprocess
-        from PySide6.QtCore import QTimer
+        self.start_btn.setEnabled(False)
 
         args = [
             'python3', worker("particle_in_cell_process.py")
@@ -268,10 +288,17 @@ class SimulationOptionsPanel(QWidget):
         self.solver_start_time = time.perf_counter()
         try:
             self.process = subprocess.Popen(args)
+            self.process_finished = False
             print(f"[DEBUG] Proceso lanzado, PID: {self.process.pid}")
         except Exception as e:
             print(f"[ERROR] Fallo al lanzar el proceso: {e}")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Error al lanzar el subproceso")
+            msg.setText(f"No se pudo iniciar el solver: {e}")
+            msg.exec()
             self.process = None
+            self.start_btn.setEnabled(True)
             return
 
         def check_output():
@@ -281,41 +308,83 @@ class SimulationOptionsPanel(QWidget):
             if self.process.poll() is not None:
                 self.timer.stop()
                 elapsed = time.perf_counter() - self.solver_start_time
-                print(f"[DEBUG] Proceso terminado correctamente. Tiempo total: {elapsed:.2f} s")
-                self.process = None
 
-                import json
+                stdout, stderr = self.process.communicate()
+                exit_code = self.process.returncode
+                self.process = None
+                self.progress_bar.finish()
+                self.start_btn.setEnabled(True)
+
+                self._reload_shared_state()
+
+                if exit_code != 0:
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Critical)
+                    msg.setWindowTitle("Error en el solver")
+                    msg.setText(f"El solver finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.exec()
+                    self.start_btn.setEnabled(True)
+                    self.progress_bar.finish()
+                    print(f"[ERROR] Solver falló: {stderr}")
+                    self.label_impulso.setText("Impulso específico: <b>N/A</b>")
+                    self.label_tiempo.setText("Tiempo de simulación: <b>N/A</b>")
+                    self.label_frames.setText(f"Número de frames: <b>{self.simulation_state.frames}</b>")
+                    self.simulation_state.prev_params_simulation = [None] * len(self.simulation_state.prev_params_simulation)
+                    return
+                print(f"[INFO] Solver terminado exitosamente en {elapsed:.2f} s")
+                self._reload_shared_state()
                 try:
-                    with open("resultados_simulacion.json") as f:
-                        resultados = json.load(f)
-                    impulso = resultados.get("impulso_especifico", "N/A")
+                    self.simulation_state.time_simulation = elapsed
+                    self.simulation_state.save_to_json(model("simulation_state.json"))
                 except Exception as e:
                     print(f"[ERROR] No se pudieron leer los resultados: {e}")
-                    impulso = "N/A"
-
-                self.label_impulso.setText(f"Impulso específico: <b>{impulso} s</b>")
-                self.label_tiempo.setText(f"Tiempo de simulación: <b>{elapsed} min</b>")
+                    self.simulation_state.impulso_especifico = "N/A"
+                self.label_impulso.setText(f"Impulso específico: <b>{self.simulation_state.impulso_especifico} s</b>")
+                self.label_tiempo.setText(f"Tiempo de simulación: <b>{elapsed:.2f} s</b>")
                 self.label_frames.setText(f"Número de frames: <b>{self.simulation_state.frames}</b>")
+                self.simulation_instance.reload_data()
+                self.simulation_instance.refresh_particles()
+
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Information)
+                msg.setWindowTitle("Simulación completada (Simulación)")
+                msg.setText("✅ El solver se completó correctamente.\nApp is ready.")
+                msg.exec()
+
         self.timer = QTimer()
         self.timer.timeout.connect(check_output)
         self.timer.start(300)
 
     def on_pause_resume_clicked(self):
-        # Pausa/reanuda SOLO la animación visual
-        if self.simulation_paused:
-            self.simulation_paused = False
-            self.pause_btn.setText("⏸️ Pausa")
-            if hasattr(self, "loader_worker_simulation"):
-                print("▶️ Animación reanudada.")
-                self.simulation_thread.start()
-                self.simulation_paused = False
-        else:
-            self.simulation_paused = True
-            self.pause_btn.setText("▶️ Continuar")
-            if hasattr(self, "loader_worker_simulation"):
-                self.simulation_paused = True
-                print("⏸️ Animación pausada.")
-                # self.simulation_thread.pause()
+        self.pause_btn.setEnabled(False)
+        self.simulation_instance._create_particle_actors()
+
+        thread = QThread()
+        self._pause_thread = thread
+        worker = LoaderWorker(
+            mode="simulation",
+            plotter=self.simulation_instance,
+            params={"neutral_visible": True}
+        )
+
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+
+        def cleanup():
+            print(f"🧹 Limpiando thread del worker: {worker.mode}")
+            self.simulation_instance.reload_data()
+            self.simulation_instance.refresh_particles()
+            self.pause_btn.setEnabled(True)
+            self._pause_thread = None
+            thread.deleteLater()
+
+        thread.finished.connect(cleanup)
+        print(f"🚀 Lanzando worker en modo: {worker.mode}")
+        thread.start()
+
 
     def on_restart_clicked(self):
         print("[DEBUG] Reiniciando simulación")
@@ -323,7 +392,6 @@ class SimulationOptionsPanel(QWidget):
             self.loader_worker_simulation.stop()
         self.simulation_running = False
         self.simulation_paused = False
-        # Limpia o reinicia la interfaz según necesites
 
 class LoaderSimulation(QObject):
     finished = Signal(object)

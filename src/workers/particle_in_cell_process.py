@@ -1,46 +1,37 @@
 import io
 import os
 import sys
-
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
-
-from project_paths import model
-from models.simulation_state import SimulationState
 import json
 import traceback
 import numpy as np
 
-print("[DEBUG] Lanzando run_mesher.py...")
+# Add parent directory to path for imports from project root
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 
+from project_paths import model
+from models.simulation_state import SimulationState
+
+print("[DEBUG] Launching run_mesher.py...")
+
+# Load simulation state from JSON file
 state = SimulationState.load_from_json(model("simulation_state.json"))
 
-# Parámetros principales
-N = getattr(state, "N_particles", 1000)      # Default = 1000
-frames = getattr(state, "frames", 500)       # Default = 500
+# Main parameters with defaults if not specified in state
+N = getattr(state, "N_particles", None) or 1000
+frames = getattr(state, "frames", None) or 500
 
-# Avanzados (con defaults si no existen)
-alpha = getattr(state, "alpha", None)
-if alpha is None:
-    alpha = 0.9
+alpha = getattr(state, "alpha", None) or 0.9
+sigma_ion = getattr(state, "sigma_ion", None) or 1e-11
+dt = getattr(state, "dt", None) or 4e-8
 
-sigma_ion = getattr(state, "sigma_ion", None)
-if sigma_ion is None:
-    sigma_ion = 1e-11
-
-dt = getattr(state, "dt", None)
-if dt is None:
-    dt = 4e-8
-
-# GPU activo
-GPU_ACTIVE = getattr(state, "GPU_ACTIVE", False)
-
+GPU_ACTIVE = getattr(state, "GPU_ACTIVE", None) or False
+# Import appropriate PIC implementation depending on GPU usage
 if GPU_ACTIVE:
     from particle_in_cell import PIC
 else:
     from particle_in_cell_cpu import PIC
 
-# Tipo de gas y propiedades asociadas
+# Gas type and associated properties
 gas = getattr(state, "gas", "Xenon")
 
 if gas == "Xenon":
@@ -59,15 +50,27 @@ else:
     q_m = 7.35e5
     V_neutro = 200
 
-# (Opcional) Imprima para verificar
-print(f"N={N}, frames={frames}, alpha={alpha}, sigma_ion={sigma_ion}, dt={dt}, GPU={GPU_ACTIVE}, gas={gas}")
-print(f"q/m={q_m}, V_neutro={V_neutro}")
+# Debug output of parameters
+print(f"[DEBUG] Simulation parameters:\n"
+      f"  N = {N}\n"
+      f"  frames = {frames}\n"
+      f"  alpha = {alpha}\n"
+      f"  sigma_ion = {sigma_ion}\n"
+      f"  dt = {dt}\n"
+      f"  GPU_ACTIVE = {GPU_ACTIVE}\n"
+      f"  gas = {gas}")
+
+print(f"[DEBUG] Physical properties:\n"
+      f"  Charge-to-mass ratio (q/m) = {q_m}\n"
+      f"  Neutral velocity (V_neutro) = {V_neutro}")
 
 try:
-    Rin = state.R_small      # o el nombre correcto que tenga en el JSON, por ejemplo "R_small"
-    Rex = state.R_big      # o "R_big", según su estructura
+    # Geometrical parameters (ensure keys match your JSON structure)
+    Rin = state.R_small
+    Rex = state.R_big
     L = state.H
 
+    # Initialize Particle-in-Cell simulation
     pic = PIC(
         Rin=Rin,
         Rex=Rex,
@@ -78,20 +81,20 @@ try:
         alpha=alpha,
         sigma_ion=sigma_ion
     )
+
     pic.initizalize_to_simulation(v_neutro=V_neutro, timesteps=frames)
     pic.render()
 
-    impulso_especifico = pic.specific_impulse
-
-    resultados = {
-        "impulso_especifico": impulso_especifico * 0.2,
-    }
-    with open("resultados_simulacion.json", "w") as f:
-        json.dump(resultados, f)
+    specific_impulse = pic.specific_impulse
+    state.impulso_especifico = specific_impulse * 0.2
+    state.save_to_json(model("simulation_state.json"))
+    with open(model("simulation_state.json"), "r") as fp:
+        contenido = json.load(fp)
+    print("[DEBUG] Contenido recién guardado:", contenido.get("impulso_especifico"))
 
 except Exception as e:
-    print("[ERROR] mesh process failed :")
+    print("[ERROR] Mesh process failed:")
     traceback.print_exc()
-    with open("run_mesher_error.log", "w") as ferr:
-        ferr.write(traceback.format_exc())
+    with open("run_mesher_error.log", "w") as error_file:
+        error_file.write(traceback.format_exc())
     sys.exit(1)

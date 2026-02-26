@@ -2,20 +2,32 @@
     "H": 0.02,
     "R_big": 0.05,
     "R_small": 0.028,
-    "refinement_level": "low",
+    "r0": 0.0385,
+    "refinement_level": "test",
+    "max_elements": null,
+    "min_physics_scale": null,
+    "chunk_size": null,
     "voltage": 300.0,
     "voltage_cathode": 18.0,
-    "nSteps": 5000,
-    "N_turns": 200,
-    "I": 4.5,
-    "r0": 0.0385,
-    "N_particles": 100000,
+    "N_turns": 100,
+    "I": -4.7,
+    "nSteps": -23,
+    "N_particles": 100,
     "frames": 500,
+    "alpha": null,
+    "sigma_ion": null,
+    "dt": null,
+    "GPU_ACTIVE": false,
+    "gas": "Xenon",
+    "field_outdated": false,
+    "magnetic_outdated": true,
+    "impulso_especifico": 2225.5747437793193,
+    "time_simulation": 1.1700186750003922,
     "prev_params_mesh": [
         0.02,
         0.05,
         0.028,
-        "low",
+        "test",
         null,
         null
     ],
@@ -24,26 +36,27 @@
         18.0
     ],
     "prev_params_magnetic": [
-        5000,
-        200,
-        4.5
+        null,
+        null,
+        null
     ],
     "prev_params_simulation": [
-        100000,
+        100,
         500,
         null,
         null,
         null,
-        "Xenon"
+        "Xenon",
+        false
     ],
-    "min_physics_scale": null,
-    "max_elements": null,
-    "chunk_size": null,
-    "alpha": null,
-    "sigma_ion": null,
-    "dt": null,
-    "GPU_ACTIVE": false,
-    "gas": "Xenon",
-    "field_outdated": false,
-    "magnetic_outdated": false
+    "mode_magnetic": "heatmap",
+    "output_file": "/home/miguel/Documents/project/src/data_files/heatmap_4287806fd7af556bed3e19e9f0809014.png",
+    "kwargs": {
+        "XY": false,
+        "ZX": true,
+        "Solenoid_Center": true,
+        "All_Solenoids": true,
+        "Plane_Value": 0.02,
+        "resolution": 100
+    }
 }

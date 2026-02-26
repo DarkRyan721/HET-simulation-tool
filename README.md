@@ -171,8 +171,40 @@ To review or modify the package list, please refer to that file.
 # Install dependencies
 
 ```bash
-pip install -r requirements.txt
-
-# Clone repository
 git clone https://github.com/DarkRyan721/thesis_HT_software_design.git
+cd thesis_HT_software_design
+pip install -r requirements.txt
+```
 
+## Run
+
+```bash
+python src/app.py
+```
+
+## Project Structure (Single Root)
+
+All active Python modules are now anchored under `src/`.
+
+```text
+.
+├── src/
+│   ├── app.py
+│   ├── main_window.py
+│   ├── project_paths.py
+│   ├── widgets/
+│   ├── workers/
+│   ├── utils/
+│   ├── models/
+│   ├── gui_styles/
+│   ├── data_files/
+│   └── legacy/
+│       └── gui_widgets_legacy/   # old UI snapshot (not active)
+├── tests/
+├── docs/
+├── assets/
+└── requirements.txt
+```
+
+Note: the previous duplicate UI folder at repository root (`gui_widgets/`) was moved to
+`src/legacy/gui_widgets_legacy/` to keep a single active code root.

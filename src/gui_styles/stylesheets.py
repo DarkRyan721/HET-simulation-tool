@@ -1,28 +1,29 @@
 def checkbox_style():
     return """
-    QCheckBox {
-        spacing: 8px;
-        color: white;
-        font-weight: normal;
-    }
+        QCheckBox {
+            spacing: 8px;
+            color: white;
+            font-weight: normal;
+        }
 
-    QCheckBox::indicator {
-        width: 18px;
-        height: 18px;
-        border: 1px solid #888;
-        border-radius: 4px;
-        background: #2b2b2b;
-    }
+        QCheckBox::indicator {
+            width: 18px;
+            height: 18px;
+            border: 1px solid #888;
+            border-radius: 4px;
+            background: #2b2b2b;
+        }
 
-    QCheckBox::indicator:checked {
-        background-color: #5c6bc0;
-        border: 1px solid #5c6bc0;
-    }
+        QCheckBox::indicator:checked {
+            background-color: #5c6bc0;
+            border: 1px solid #5c6bc0;
+        }
 
-    QCheckBox::indicator:hover {a
-        border: 1px solid #aaaaaa;
-    }
+        QCheckBox::indicator:hover {
+            border: 1px solid #aaaaaa;
+        }
     """
+
 
 def button_parameters_style():
     return """
@@ -36,18 +37,22 @@ def button_parameters_style():
             margin-top: 10px;
             border: 1px solid #3a70b2;
         }
+
         QPushButton:hover {
             background-color: #5fa1f2;
         }
+
         QPushButton:pressed {
             background-color: #2e6bb2;
         }
+
         QPushButton:disabled {
             background-color: #b0b0b0;
             color: #f0f0f0;
             border: 1px solid #a0a0a0;
         }
     """
+
 
 def self_Style():
     return """
@@ -78,6 +83,7 @@ def self_Style():
             padding: 2px;
             border-radius: 3px;
         }
+
         QFrame#VPartFrame {
             background-color: #D3D3D3;
             border-left: 2px solid #818589;
@@ -85,133 +91,145 @@ def self_Style():
         }
     """
 
+
 def button_activate_style():
     return """
-    QPushButton {
-        background-color: #2c2c2c;
-        color: #ffffff;
-        font-size: 30px;
-        margin-top: 10px;
-        font-weight: bold;
-        border-radius: 10px;
-        text-align: center;
-        padding: 5px;  /* afecta el contenido interno */
-        margin-left: 5px;  /* esto sí separa del borde */
-        margin-right: 0;
-        border-top-right-radius: 0px;
-    border-bottom-right-radius: 0px;
-    }"""
+        QPushButton {
+            background-color: #2c2c2c;
+            color: #ffffff;
+            font-size: 30px;
+            margin-top: 10px;
+            font-weight: bold;
+            border-radius: 10px;
+            text-align: center;
+            padding: 5px;
+            margin-left: 5px;
+            margin-right: 0;
+            border-top-right-radius: 0px;
+            border-bottom-right-radius: 0px;
+        }
+    """
+
 
 def button_options_style():
     return """
-            QPushButton {
-                background-color: #131313;
-                color: #ffffff;
-                font-size: 30px;
-                margin-top: 10px;
-                font-weight: bold;
-                border-radius: 10px;
-                text-align: center;
-                padding: 5px;  /* afecta el contenido interno */
-                margin-left: 5px;  /* esto sí separa del borde */
-                margin-right: 5px;
-            }
+        QPushButton {
+            background-color: #131313;
+            color: #ffffff;
+            font-size: 30px;
+            margin-top: 10px;
+            font-weight: bold;
+            border-radius: 10px;
+            text-align: center;
+            padding: 5px;
+            margin-left: 5px;
+            margin-right: 5px;
+        }
 
-            QPushButton:hover {
-                background-color: #ffffff;
-                color: #131313;
-                padding: 5px;  /* afecta el contenido interno */
-                margin-left: 5px;  /* esto sí separa del borde */
-                margin-right: 5px;
-            }
-            QPushButton:pressed {
-                background-color: #212121;
-                color: #131313;
-                padding: 5px;  /* afecta el contenido interno */
-                margin-left: 5px;  /* esto sí separa del borde */
-                margin-right: 5px;
-            }
+        QPushButton:hover {
+            background-color: #ffffff;
+            color: #131313;
+            padding: 5px;
+            margin-left: 5px;
+            margin-right: 5px;
+        }
 
-            QPushButton:disabled {
-                background-color: #131313;
-                color: #393939;
-                padding: 5px;  /* afecta el contenido interno */
-                margin-left: 5px;  /* esto sí separa del borde */
-                margin-right: 5px;
-            }
-        """
+        QPushButton:pressed {
+            background-color: #212121;
+            color: #131313;
+            padding: 5px;
+            margin-left: 5px;
+            margin-right: 5px;
+        }
+
+        QPushButton:disabled {
+            background-color: #131313;
+            color: #393939;
+            padding: 5px;
+            margin-left: 5px;
+            margin-right: 5px;
+        }
+    """
+
+
 def box_render_style():
     return """
-            QComboBox {
-                background-color: #1e1e1e;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 3px;
-                padding: 4px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #2b2b2b;
-                color: white;
-                selection-background-color: #5c6bc0;
-                border: none;
-            }
-        """
+        QComboBox {
+            background-color: #1e1e1e;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 4px;
+        }
+
+        QComboBox QAbstractItemView {
+            background-color: #2b2b2b;
+            color: white;
+            selection-background-color: #5c6bc0;
+            border: none;
+        }
+    """
+
+
 def checkbox_parameters_style():
     return """
-    QCheckBox {
-        spacing: 6px;
-        color: white;
-        font-size: 13px;
-        font-weight: 500;
-    }
+        QCheckBox {
+            spacing: 6px;
+            color: white;
+            font-size: 13px;
+            font-weight: 500;
+        }
 
-    QCheckBox::indicator {
-        width: 16px;
-        height: 16px;
-        border: 1px solid #3a70b2;
-        border-radius: 3px;
-        background-color: #1e1e1e;
-    }
+        QCheckBox::indicator {
+            width: 16px;
+            height: 16px;
+            border: 1px solid #3a70b2;
+            border-radius: 3px;
+            background-color: #1e1e1e;
+        }
 
-    QCheckBox::indicator:checked {
-        image: url(:/qt-project.org/styles/commonstyle/images/checkbox_checked.png);
-        background-color: #4a90e2;
-        border: 1px solid #4a90e2;
-    }
+        QCheckBox::indicator:checked {
+            image: url(:/qt-project.org/styles/commonstyle/images/checkbox_checked.png);
+            background-color: #4a90e2;
+            border: 1px solid #4a90e2;
+        }
 
-    QCheckBox::indicator:hover {
-        border: 1px solid #5fa1f2;
-    }
+        QCheckBox::indicator:hover {
+            border: 1px solid #5fa1f2;
+        }
 
-    QCheckBox::indicator:disabled {
-        background-color: #3a3a3a;
-        border: 1px solid #555;
-    }
+        QCheckBox::indicator:disabled {
+            background-color: #3a3a3a;
+            border: 1px solid #555;
+        }
     """
+
 
 def advanced_toggle_style():
     return """
-            QPushButton {
-                background-color: #18191a;
-                color: #f5f5f5;
-                border: none;
-                font-weight: bold;
-                text-align: left;
-                padding: 8px;
-                border-radius: 3px;
-            }
-            QPushButton:checked {
-                background-color: #23272b;
-                color: #f5f5f5;
-            }
+        QPushButton {
+            background-color: #18191a;
+            color: #f5f5f5;
+            border: none;
+            font-weight: bold;
+            text-align: left;
+            padding: 8px;
+            border-radius: 3px;
+        }
+
+        QPushButton:checked {
+            background-color: #23272b;
+            color: #f5f5f5;
+        }
     """
+
 
 def advanced_content_style():
     return """
-            QFrame {
-                background-color: #23272b;
-                color: #f5f5f5;
-                border-radius: 3px;
-                padding: 8px;
-            }
+        QFrame {
+            background-color: #23272b;
+            color: #f5f5f5;
+            border-radius: 3px;
+            padding: 8px;
+        }
     """

@@ -1,4 +1,3 @@
-import sys
 import os
 import numpy as np
 import pyvista as pv
@@ -7,12 +6,7 @@ from pyvistaqt import QtInteractor
 
 from utils.loading_bar import ProgressBarWidget
 from widgets.panels.collapse import CollapsibleBox
-
-
-
-# Añadir ../../ (es decir, src/) al path para importar desde la raíz del proyecto
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-
+from PySide6.QtWidgets import QMessageBox
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout, QLineEdit, QLabel,
@@ -62,6 +56,11 @@ class HomeOptionsPanel(QWidget):
         sim_layout.addRow("Small radius (R_small):", self.input_R_Small_container)
         self.mesh_quality_box = QComboBox()
         self.mesh_quality_box.addItems(["Test", "Low", "Medium", "High", "Ultra"])
+        # Selecciona el valor según el estado inicial:
+        refinement = self.simulation_state.refinement_level  # Puede venir en minúsculas
+        items = [self.mesh_quality_box.itemText(i) for i in range(self.mesh_quality_box.count())]
+        idx = next((i for i, item in enumerate(items) if item.lower() == refinement.lower()), 0)
+        self.mesh_quality_box.setCurrentIndex(idx)
         self.mesh_quality_box.setStyleSheet(box_render_style())
         sim_layout.addRow(self.mesh_quality_box)
         sim_box.setLayout(sim_layout)
@@ -134,7 +133,6 @@ class HomeOptionsPanel(QWidget):
         advanced_content_layout.addRow("Minimum Physics Scale:", self.input_min_scale_container)
         advanced_content_layout.addRow("Max Elements:", self.input_max_elements_container)
 
-
         def toggle_advanced():
             advanced_content.setVisible(advanced_toggle.isChecked())
 
@@ -155,13 +153,36 @@ class HomeOptionsPanel(QWidget):
 
         self.current_mesh = None
         layout.addStretch()
+        self.sync_widgets_with_state()
         self._load_initial_mesh_if_exists()
+
+
+    def sync_widgets_with_state(self):
+        self.input_H.setText(str(self.simulation_state.H))
+        self.input_R_Big.setText(str(self.simulation_state.R_big))
+        self.input_R_Small.setText(str(self.simulation_state.R_small))
+        self.mesh_quality_box.setCurrentText(self.simulation_state.refinement_level.capitalize())
+        self.input_min_scale.setText("" if self.simulation_state.min_physics_scale is None else str(self.simulation_state.min_physics_scale))
+        self.input_max_elements.setText("" if self.simulation_state.max_elements is None else str(self.simulation_state.max_elements))
+
+        # También sincroniza prev_params_mesh si no existe
+        first_params = (
+            self.simulation_state.H,
+            self.simulation_state.R_big,
+            self.simulation_state.R_small,
+            self.simulation_state.refinement_level,
+            self.simulation_state.min_physics_scale,
+            self.simulation_state.max_elements
+        )
+        if getattr(self.simulation_state, "prev_params_mesh", None) is None:
+            self.simulation_state.prev_params_mesh = first_params
+
 
     def _create_viewer(self):
         viewer = QtInteractor()
         viewer.set_background("white")          # Fondo blanco
         viewer.setStyleSheet("background-color: #131313; border-radius: 5px;")
-        viewer.add_axes(interactive=False)
+        viewer.add_axes(interactive=False, line_width=2, color='black')
         viewer.setSizePolicy(QtW.QSizePolicy.Expanding, QtW.QSizePolicy.Expanding)
         viewer.view_yx()
         return viewer
@@ -244,7 +265,7 @@ class HomeOptionsPanel(QWidget):
         self.home_viewer.show_bounds(
             all_edges=True,
             location="outer",
-            color="white",
+            color="black",
             grid=True,
             show_xaxis=True,
             show_yaxis=True,
@@ -298,6 +319,7 @@ class HomeOptionsPanel(QWidget):
             min_physical_scale, max_elements
         )
 
+
         if new_params != self.simulation_state.prev_params_mesh:
             self.update_btn.setEnabled(False)
             self.progress_bar.start("Cargando malla...")
@@ -314,17 +336,25 @@ class HomeOptionsPanel(QWidget):
             }
             print(params)
 
-            self.simulation_state.field_outdated = True
-            self.simulation_state.magnetic_outdated = True
             self.simulation_state.save_to_json(model("simulation_state.json"))
             self.run_process_and_reload(
                 process_script="mesh_generator_process.py",
                 loader_mode="mesh",
                 finished_callback=self.on_mesh_loaded
             )
+            self.simulation_state.save_to_json(model("simulation_state.json"))
+            self.main_window.simulation_panel.update_simulate_button_state()
 
         else:
+            from PySide6.QtWidgets import QMessageBox
             print("⚠️ No se han realizado cambios en la malla.")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Sin cambios detectados")
+            msg.setText("Debe modificar los parámetros para actualizar o recalcular la malla.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.exec()
 
     def validar_numeros(self, campos, opcionales=None):
         """
@@ -361,10 +391,10 @@ class HomeOptionsPanel(QWidget):
             return
 
         self.update_btn.setEnabled(True)
+        self.progress_bar.start("Cargando malla...")
         self.progress_bar.finish()
         self.current_mesh = data
         self.main_window.View_Part.current_data = data
-        self.main_window.View_Part.switch_view("mesh")
         self.switch_dataset(self.combo.currentText())
 
     def _load_initial_mesh_if_exists(self):
@@ -373,40 +403,13 @@ class HomeOptionsPanel(QWidget):
             worker = LoaderWorker(mode="mesh")
             self.main_window.launch_worker(worker, self.on_mesh_loaded)
 
-    # def run_mesher_in_subprocess(self, finished_callback):
-    #     run_mesher_path = worker("mesh_generator_process.py")
-
-    #     # Ahora solo pasas el nombre del script, sin argumentos personalizados
-    #     args = ['python3', run_mesher_path]
-
-    #     self.process = subprocess.Popen(args)
-    #     self.mesher_start_time = time.perf_counter()
-    #     self.mesher_finished = False
-
-    #     # Usa un QTimer para verificar cuándo termina el subproceso
-
-    #     def check_output():
-    #         if self.process is None:
-    #             self.timer.stop()
-    #             return
-    #         if self.process.poll() is not None:
-    #             self.timer.stop()
-    #             self.mesher_finished = True
-    #             elapsed = time.perf_counter() - self.mesher_start_time
-    #             print(f"[DEBUG] Mallado terminado en {elapsed:.2f} s")
-    #             self.process = None
-    #             # Llama al callback
-    #             print("[INFO] Recargando malla con LoaderWorker luego de mallado.")
-    #             loader = LoaderWorker(mode="mesh")
-    #             self.main_window.launch_worker(loader, self.on_mesh_loaded)
-    #             # (Opcional) llamar al callback adicional si quieres
-
-    #     self.timer = QTimer()
-    #     self.timer.timeout.connect(lambda: check_output())
-    #     self.timer.start(300)  # cada 300 ms
-
     def run_process_and_reload(self, process_script, loader_mode, finished_callback):
         args = ['python3', worker(process_script)]
+        # self.process = subprocess.Popen(
+        #     args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        # )
+        # self.process_start_time = time.perf_counter()
+        # self.process_finished = False
         self.process = subprocess.Popen(args)
         self.process_start_time = time.perf_counter()
         self.process_finished = False
@@ -420,13 +423,40 @@ class HomeOptionsPanel(QWidget):
                 self.process_finished = True
                 elapsed = time.perf_counter() - self.process_start_time
                 print(f"[DEBUG] Proceso terminado en {elapsed:.2f} s")
+                stdout, stderr = self.process.communicate()
+                exit_code = self.process.returncode
                 self.process = None
-                loader = LoaderWorker(mode=loader_mode)
-                self.main_window.launch_worker(loader, finished_callback)
+
+                if exit_code != 0:
+                    # Proceso falló: mostrar advertencia con el error capturado
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Critical)
+                    msg.setWindowTitle("Error en el subproceso")
+                    msg.setText(f"El proceso finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.exec()
+                    self.progress_bar.finish()
+                    self.update_btn.setEnabled(True)
+                    print(f"[ERROR] Subproceso falló: {stderr}")
+                    self.simulation_state.prev_params_mesh = [None] * len(self.simulation_state.prev_params_mesh)
+                    self.simulation_state.save_to_json(model("simulation_state.json"))
+                else:
+                    # Proceso OK: mostrar mensaje de éxito y continuar flujo normal
+                    print(f"[INFO] Proceso terminado exitosamente en {elapsed:.2f} s")
+                    self.simulation_state.field_outdated = True
+                    self.simulation_state.magnetic_outdated = True
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Information)
+                    msg.setWindowTitle("Proceso completado (Mallado)")
+                    msg.setText("✅ El proceso se completó correctamente.\nApp is ready.")
+                    msg.exec()
+                    loader = LoaderWorker(mode=loader_mode)
+                    self.main_window.launch_worker(loader, finished_callback)
 
         self.timer = QTimer()
         self.timer.timeout.connect(check_output)
         self.timer.start(300)
+
 
 
     def change_view(self, view):
@@ -469,4 +499,3 @@ class HomeOptionsPanel(QWidget):
             return
 
         self._apply_visual_style_home(mesh_to_show)
-

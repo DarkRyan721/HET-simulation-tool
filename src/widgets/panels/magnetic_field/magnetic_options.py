@@ -1,6 +1,6 @@
 import subprocess
-import sys
 import os
+import sys
 import time
 import numpy as np
 import pyvista as pv
@@ -9,7 +9,7 @@ from PySide6.QtCore import Slot
 
 import hashlib
 import json
-
+from PySide6.QtWidgets import QMessageBox
 from magnetic_field_solver_cpu import B_Field
 from utils.loader_thread import LoaderWorker
 from widgets.panels.collapse import CollapsibleBox
@@ -21,9 +21,6 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout, QLineEdit, QLabel,
     QHBoxLayout, QPushButton, QCheckBox, QSlider, QComboBox
 )
-
-# Añadir ../../ (es decir, src/) al path para importar desde la raíz del proyecto
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout, QPushButton
@@ -45,6 +42,7 @@ import matplotlib.pyplot as plt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout, QPushButton, QComboBox
 )
+from utils.loading_bar import ProgressBarWidget
 from PySide6.QtWidgets import QStyle
 from PySide6.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QFrame
 from PySide6.QtGui import QPixmap
@@ -72,15 +70,6 @@ class MagneticOptionsPanel(QWidget):
         self.visualization_layout = QVBoxLayout()
         layout.addLayout(self.visualization_layout)
 
-        # --- Combo de selección de visualización ---
-        self.visualization_selector = QComboBox()
-        self.visualization_selector.addItem("3D Magnetic Field")
-        self.visualization_selector.addItem("Heatmap")
-        self.visualization_selector.addItem("Field Lines")
-        self.visualization_selector.addItem("Solenoid Points")
-        self.visualization_selector.currentIndexChanged.connect(self._switch_view)
-        layout.addWidget(self.visualization_selector)
-
         # --- Diccionario de widgets de visualización ---
         self.visualization_widgets = {}
 
@@ -103,10 +92,10 @@ class MagneticOptionsPanel(QWidget):
 
 
         # Botón de actualización
-        update_btn = QPushButton("Update")
-        update_btn.setStyleSheet(button_parameters_style())
-        update_btn.clicked.connect(self.on_update_clicked_Magnetic_field)
-        layout.addWidget(update_btn)
+        self.update_btn = QPushButton("Update")
+        self.update_btn.setStyleSheet(button_parameters_style())
+        self.update_btn.clicked.connect(self.on_update_clicked_Magnetic_field)
+        layout.addWidget(self.update_btn)
 
         self.solenoid_controls = SolenoidPointsControlPanel()
         self.solenoid_controls.btn_update.clicked.connect(self._show_solenoid_points_viewer)
@@ -121,12 +110,32 @@ class MagneticOptionsPanel(QWidget):
         layout.addWidget(self.field_lines_controls)
         layout.addWidget(self.heatmap_controls)
 
+        self.progress_bar = ProgressBarWidget("Cargando malla...")
+        layout.addWidget(self.progress_bar)
+        self.progress_bar.hide()
+        # self.progress_bar = QtW.QProgressBar()
+        # self.progress_bar.setRange(0, 0)  # Indeterminado (marquee)
+        # self.progress_bar.setVisible(False)
+        # layout.addWidget(self.progress_bar)
 
         # Estira para ocupar espacio
         layout.addStretch()
 
         # Carga inicial si existe
         self._load_initial_magnetic_if_exists()
+
+    def update_magnetic_button_state(self):
+        if self.simulation_state.field_outdated:
+            self.set_buttons_enabled(False)
+        else:
+            self.set_buttons_enabled(True)
+
+    def set_buttons_enabled(self, enabled: bool):
+        # Aquí agrega todos los botones que deseas deshabilitar/habilitar
+        self.heatmap_controls.btn_update.setEnabled(enabled)
+        self.field_lines_controls.btn_update.setEnabled(enabled)
+        self.solenoid_controls.btn_update.setEnabled(enabled)
+        self.update_btn.setEnabled(enabled)
 
     def on_update_clicked_Magnetic_field(self):
         # Recolecta campos obligatorios y avanzados
@@ -150,24 +159,32 @@ class MagneticOptionsPanel(QWidget):
         self.simulation_state.N_turns = N_turns
         self.simulation_state.I = I
 
-        new_params = (nSteps, N_turns, I)
-        regenerate = new_params != self.simulation_state.prev_params_magnetic
-        if regenerate or self.simulation_state.magnetic_outdated:
+        self.progress_bar.start("Cargando malla...")
+        self.set_buttons_enabled(False)
+        new_params = [nSteps, N_turns, I]
+        if new_params != self.simulation_state.prev_params_magnetic or self.simulation_state.magnetic_outdated:
+            self.progress_bar.start()
             print("🔄 Parámetros magnéticos cambiaron:", new_params)
             self.simulation_state.prev_params_magnetic = new_params
-            self.simulation_state.magnetic_outdated = False
             self.simulation_state.save_to_json(model("simulation_state.json"))
-            # self.run_bfield_external(nSteps, N_turns, I)
+            print("Entrando en run process.")
             self.run_process_and_reload(
                 process_script="magnetic_field_process.py",
                 loader_mode="magnetic",
-                finished_callback=self.on_magnetic_loaded
+                finished_callback= self.on_magnetic_loaded_file
             )
         else:
+            from PySide6.QtWidgets import QMessageBox
             print("⚠️ No se han realizado cambios en los parámetros magnéticos.")
-
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Sin cambios detectados")
+            msg.setText("⚠️ Debe cambiar los parámetros para ejecutar una nueva simulación del campo magnético.")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.exec()
+            self.main_window.launch_worker(LoaderWorker(mode="magnetic"), self.on_magnetic_loaded)
         self.simulation_state.print_state()
-
 
     def validar_numeros(self, campos, opcionales=None):
         """
@@ -195,35 +212,6 @@ class MagneticOptionsPanel(QWidget):
             resultados[nombre] = valor
         return resultados
 
-    # def run_bfield_external(self, finished_callback):
-    #     script_path = worker("magnetic_field_process.py")
-    #     args = [
-    #         "python3", script_path
-    #     ]
-    #     self.process = subprocess.Popen(args)
-    #     self.magnetic_start_time = time.perf_counter()
-    #     self.magnetic_finished = False
-
-    #     def check_output():
-    #         if self.process is None:
-    #             self.timer.stop()
-    #             return
-    #         if self.process.poll() is not None:
-    #             self.timer.stop()
-    #             self.magnetic_finished = True
-    #             elapsed = time.perf_counter() - self.magnetic_start_time
-    #             print(f"[DEBUG] Mallado terminado en {elapsed:.2f} s")
-    #             self.process = None
-    #             # Llama al callback
-    #             print("[INFO] Recargando malla con LoaderWorker luego de mallado.")
-    #             loader = LoaderWorker(mode="magnetic")
-    #             self.main_window.launch_worker(loader, self.on_magnetic_loaded)
-
-    #     self.timer = QTimer()
-    #     self.timer.timeout.connect(lambda: check_output())
-    #     self.timer.start(300)  # cada 300 ms
-
-
     def run_process_and_reload(self, process_script, loader_mode, finished_callback):
         args = ['python3', worker(process_script)]
         self.process = subprocess.Popen(args)
@@ -239,9 +227,34 @@ class MagneticOptionsPanel(QWidget):
                 self.process_finished = True
                 elapsed = time.perf_counter() - self.process_start_time
                 print(f"[DEBUG] Proceso terminado en {elapsed:.2f} s")
+                stdout, stderr = self.process.communicate()
+                exit_code = self.process.returncode
+
                 self.process = None
-                loader = LoaderWorker(mode=loader_mode)
-                self.main_window.launch_worker(loader, finished_callback)
+
+                if exit_code != 0:
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Critical)
+                    msg.setWindowTitle("Error en el subproceso")
+                    msg.setText(f"El proceso finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.exec()
+                    self.process_finished = True
+                    self.set_buttons_enabled(True)
+                    self.progress_bar.finish()
+                    self.simulation_state.prev_params_magnetic = [None] * len(self.simulation_state.prev_params_magnetic)
+                    self.simulation_state.save_to_json(model("simulation_state.json"))
+                    print(f"[ERROR] Subproceso falló: {stderr}")
+                else:
+                    print(f"[INFO] Proceso terminado exitosamente en {elapsed:.2f} s")
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Information)
+                    msg.setWindowTitle("Proceso completado (Campo magnetico)")
+                    msg.setText("✅ El proceso se completó correctamente.\nApp is ready.")
+                    msg.exec()
+
+                    loader = LoaderWorker(mode=loader_mode)
+                    self.main_window.launch_worker(loader, finished_callback)
 
         self.timer = QTimer()
         self.timer.timeout.connect(check_output)
@@ -249,15 +262,27 @@ class MagneticOptionsPanel(QWidget):
 
     def on_magnetic_loaded(self, data):
             self.current_magnetic = data
+            self.main_window.View_Part.current_data = data  # asegúrate de sincronizar ViewPanel
+            self.visualize_magnetic(data)
+            self.progress_bar.finish()
+            self.set_buttons_enabled(True)
+
+    def on_magnetic_loaded_file(self, data):
+            self.current_magnetic = data
             self.simulation_state.magnetic_outdated = False
             self.main_window.View_Part.current_data = data  # asegúrate de sincronizar ViewPanel
-            self.main_window.View_Part.switch_view("magnetic")
+            self.simulation_state.save_to_json(model("simulation_state.json"))
             self.visualize_magnetic(data)
+            self.progress_bar.finish()
+            self.set_buttons_enabled(True)
 
-    def visualize_magnetic(self, data):
+    def visualize_magnetic(self, glyphs):
         self.magnetic_viewer.clear()
-        streamlines = data.streamlines(data, )
-        self.magnetic_viewer.add_mesh(data, scalars="magnitude", cmap="viridis",scalar_bar_args={"title": "|B| [T]"})
+        self.magnetic_viewer.update()
+        self.magnetic_viewer.add_mesh(
+            glyphs, scalars="magnitude", cmap="magma", scalar_bar_args={"title": "|B| [T]"}
+        )
+        self.magnetic_viewer.add_text("Campo magnetico", position='upper_edge', font_size=6, color='black')
         self.magnetic_viewer.reset_camera()
         self.magnetic_viewer.view_yx()
 
@@ -296,14 +321,16 @@ class MagneticOptionsPanel(QWidget):
     def show_viewer3d(self):
         # Limpia el canvas matplotlib si está presente
         if hasattr(self, "mpl_canvas") and self.mpl_canvas is not None:
-            if "magnetic_heatmap" in self.main_window.View_Part.viewers:
-                self.main_window.View_Part.view_stack.removeWidget(self.mpl_canvas)
-                del self.main_window.View_Part.viewers["magnetic_heatmap"]
+            for name in list(self.main_window.View_Part.viewers.keys()):
+                if isinstance(self.main_window.View_Part.viewers[name], FigureCanvas):
+                    self.main_window.View_Part.view_stack.removeWidget(self.mpl_canvas)
+                    del self.main_window.View_Part.viewers[name]
             self.mpl_canvas.deleteLater()
             self.mpl_canvas = None
-        self.visualization_selector.setCurrentText("3D Magnetic Field")
+        # Ahora asegúrate de volver a agregar el viewer 3D si no está
+        if "magnetic" not in self.main_window.View_Part.viewers:
+            self.main_window.View_Part.add_viewer("magnetic", self.magnetic_viewer)
         self.main_window.View_Part.switch_view("magnetic")
-
 
     def show_matplotlib_figure(self, fig, name):
         # Elimina el canvas anterior (si existe)
@@ -318,20 +345,9 @@ class MagneticOptionsPanel(QWidget):
         self.main_window.View_Part.add_viewer(name, self.mpl_canvas)
         self.main_window.View_Part.switch_view(name)
 
-
-    def _switch_view(self):
-        selected = self.visualization_selector.currentText()
-        if selected == "3D Magnetic Field":
-            self.show_viewer3d()
-        elif selected == "Heatmap":
-            self._show_heatmap_viewer()
-        elif selected == "Field Lines":
-            self._show_field_lines_viewer()
-        elif selected == "Solenoid Points":
-            self._show_solenoid_points_viewer()
-
-
     def _start_plot_thread(self, plot_func, finished_callback):
+        self.progress_bar.start("Cargando malla...")
+        self.set_buttons_enabled(False)
         thread = QThread()
         worker = PlotWorker(plot_func)
         worker.moveToThread(thread)
@@ -341,6 +357,8 @@ class MagneticOptionsPanel(QWidget):
         worker.finished.connect(worker.deleteLater)
 
         def cleanup():
+            self.progress_bar.finish()
+            self.set_buttons_enabled(True)
             print("🧹 Limpiando thread del PlotWorker")
             self._active_plot_threads.append((thread, worker))
             thread.deleteLater()
@@ -369,30 +387,21 @@ class MagneticOptionsPanel(QWidget):
             name = "solenoid_points"
         else:
             name = "unknown_plot"
-
         self.show_matplotlib_figure(fig, name)
-        self.visualization_selector.setCurrentText(tipo)
-
-    # def _show_heatmap_viewer(self):
-    #     print("[DEBUG] Mostrando Heatmap Viewer")
-    #     self.visualization_selector.setCurrentText("Heatmap")
-    #     self.generate_heatmap_threaded()
-
-    # def _show_field_lines_viewer(self):
-    #     print("[DEBUG] Mostrando Field Lines Viewer")
-    #     self.visualization_selector.setCurrentText("Field Lines")
-    #     self.generate_fieldlines_threaded()
-
-    # def _show_solenoid_points_viewer(self):
-    #     print("[DEBUG] Mostrando Solenoid Points Viewer")
-    #     self.visualization_selector.setCurrentText("Solenoid Points")
-    #     self.generate_solenoidpoints_threaded()
 
     def _show_solenoid_points_viewer(self):
+        self.progress_bar.start("Cargando malla...")
+        self.set_buttons_enabled(False)
         print("[DEBUG] Mostrando Solenoid Points Viewer")
-        self.visualization_selector.setCurrentText("Solenoid Points")
+        print("[DEBUG] Viewers antes:", self.main_window.View_Part.viewers.keys())
         # Limpia el viewer 3D de PyVista
         self.magnetic_viewer.clear()
+        # Re-agrega el viewer si no está registrado
+        if "magnetic" not in self.main_window.View_Part.viewers:
+            self.main_window.View_Part.add_viewer("magnetic", self.magnetic_viewer)
+        # SWITCH explícito al viewer 3D:
+        self.main_window.View_Part.switch_view("magnetic")
+        print("[DEBUG] Switch a viewer 3D realizado")
         # Obtén los parámetros de los checkboxes o controles
         params = self.solenoid_controls.get_params()
         # Instancia el campo magnético según parámetros actuales
@@ -405,9 +414,15 @@ class MagneticOptionsPanel(QWidget):
         bfield.Solenoid_points_plot_pyvista(**params, plotter=self.magnetic_viewer)
         self.magnetic_viewer.reset_camera()
         self.magnetic_viewer.view_isometric()
+        self.progress_bar.finish()
+        self.set_buttons_enabled(True)
+        print("[DEBUG] Viewers después:", self.main_window.View_Part.viewers.keys())
+        print("[DEBUG] Widget activo después:", self.main_window.View_Part.view_stack.currentWidget())
 
     def generate_heatmap_threaded(self):
         print("[DEBUG] Generando Heatmap en un hilo separado")
+        self.progress_bar.start("Cargando malla...")
+        self.set_buttons_enabled(False)
         params = self.heatmap_controls.get_params()
         bfield = B_Field(
             nSteps=self.simulation_state.nSteps,
@@ -448,15 +463,16 @@ class MagneticOptionsPanel(QWidget):
         return hashlib.md5(string.encode()).hexdigest()
 
     def generate_magnetic_image(self, mode, nSteps, N_turns, I, kwargs, output_path):
+        self.simulation_state.mode_magnetic = mode
+        self.simulation_state.nSteps = nSteps
+        self.simulation_state.N_turns = N_turns
+        self.simulation_state.I = I
+        self.simulation_state.output_file = output_path
+        self.simulation_state.kwargs = kwargs
+        self.simulation_state.save_to_json(model("simulation_state.json"))
         args = [
             sys.executable,
             worker("magnetic_graphic_process.py"),
-            mode,
-            str(nSteps),
-            str(N_turns),
-            str(I),
-            output_path,
-            json.dumps(kwargs)
         ]
         result = subprocess.run(args, capture_output=True, text=True)
         if result.returncode != 0:
@@ -467,7 +483,6 @@ class MagneticOptionsPanel(QWidget):
 
     def _show_heatmap_viewer(self):
         print("[DEBUG] Mostrando Heatmap Viewer")
-        self.visualization_selector.setCurrentText("Heatmap")
         params = self.heatmap_controls.get_params()
         nSteps = self.simulation_state.nSteps
         N_turns = self.simulation_state.N_turns
@@ -476,15 +491,26 @@ class MagneticOptionsPanel(QWidget):
         hashname = self.params_hash(mode, nSteps, N_turns, I, params)
         output_path = os.path.join(data_file(""), f"heatmap_{hashname}.png")
 
+        # Antes de lanzar generate_magnetic_image(...)
+        self.simulation_state.output_file = output_path
+        self.simulation_state.mode_magnetic = mode  # ("fieldlines", "heatmap", etc.)
+        self.simulation_state.kwargs = params  # si params son los kwargs específicos del modo
+        self.simulation_state.save_to_json(model("simulation_state.json"))
+
         if not os.path.exists(output_path):
             # Lanza el proceso, preferiblemente en un QThread (ejemplo aquí sin QThread)
-            self.generate_magnetic_image( mode, nSteps, N_turns, I, params, output_path)
+            self.progress_bar.start("Cargando malla...")
+            self.set_buttons_enabled(False)
+            ok = self.generate_magnetic_image(mode, nSteps, N_turns, I, params, output_path)
+            self.progress_bar.finish()
+            self.set_buttons_enabled(True)
+            if not ok:
+                return
         # Ahora muestra la imagen
         self._show_image_in_panel(output_path, "magnetic_heatmap")
 
     def _show_field_lines_viewer(self):
         print("[DEBUG] Mostrando Field Lines Viewer")
-        self.visualization_selector.setCurrentText("Field Lines")
         params = self.field_lines_controls.get_params()
         nSteps = self.simulation_state.nSteps
         N_turns = self.simulation_state.N_turns
@@ -493,11 +519,24 @@ class MagneticOptionsPanel(QWidget):
         hashname = self.params_hash(mode, nSteps, N_turns, I, params)
         output_path = os.path.join(data_file(""), f"fieldlines_{hashname}.png")
 
+        # Antes de lanzar generate_magnetic_image(...)
+        self.simulation_state.output_file = output_path
+        self.simulation_state.mode_magnetic = mode  # ("fieldlines", "heatmap", etc.)
+        self.simulation_state.kwargs = params  # si params son los kwargs específicos del modo
+        self.simulation_state.save_to_json(model("simulation_state.json"))
+
         if not os.path.exists(output_path):
             # Lanza el proceso bloqueante (puedes migrar a QThread luego)
-            self.generate_magnetic_image(mode, nSteps, N_turns, I, params, output_path)
+            self.progress_bar.start("Cargando malla...")
+            self.set_buttons_enabled(False)
+            ok = self.generate_magnetic_image(mode, nSteps, N_turns, I, params, output_path)
+            self.progress_bar.finish()
+            self.set_buttons_enabled(True)
+            if not ok:
+                return
         # Mostrar la imagen en el panel
         self._show_image_in_panel(output_path, "magnetic_fieldlines")
+
 
     def _show_image_in_panel(self, image_path, name):
         # Borra canvas anterior
@@ -517,6 +556,7 @@ class MagneticOptionsPanel(QWidget):
         self.main_window.View_Part.add_viewer(name, label)
         self.main_window.View_Part.switch_view(name)
 
+
 class PlotWorker(QObject):
     finished = Signal(object)  # Emite el resultado (fig, ax) o solo fig
 
@@ -534,5 +574,3 @@ class PlotWorker(QObject):
         print(f"[DEBUG] FIN de plot_func, duró {time.perf_counter()-start:.2f} s")
         self.finished.emit(result)
         print("[DEBUG] Ejecutando worker de plot...")
-
-
