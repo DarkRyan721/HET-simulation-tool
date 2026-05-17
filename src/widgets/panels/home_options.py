@@ -20,6 +20,7 @@ from PySide6.QtCore import QThread, Signal, QObject, QTimer
 from mesh_generator import HallThrusterMesh
 
 from gui_styles.stylesheets import *
+from gui_styles.stylesheets import messagebox_style, viewer_frame_style
 from widgets.parameter_views import ParameterPanel
 from widgets.options_panel import OptionsPanel
 from widgets.view_panel import ViewPanel
@@ -41,6 +42,8 @@ class HomeOptionsPanel(QWidget):
         self.simulation_state = self.main_window.simulation_state
         self.setStyleSheet("background-color: transparent;")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
         # Inputs
         self.input_L_container, self.input_H = _input_with_unit(str(self.simulation_state.H), "[m]")
@@ -88,7 +91,7 @@ class HomeOptionsPanel(QWidget):
         self.view_combo.currentTextChanged.connect(self.change_view)
 
         self.combo = QComboBox()
-        self.combo.addItems(["Vista 3D", "Plano YZ"])
+        self.combo.addItems(["3D View", "YZ Plane"])
         self.combo.setStyleSheet(box_render_style())
         self.combo.currentTextChanged.connect(self.switch_dataset)
 
@@ -111,8 +114,8 @@ class HomeOptionsPanel(QWidget):
         # Fila horizontal para ambos combobox
 
 
-        # --- Opciones avanzadas desplegables ---
-        advanced_toggle = QPushButton("Opciones avanzadas")
+        # --- Collapsible advanced options ---
+        advanced_toggle = QPushButton("Advanced options")
         advanced_toggle.setCheckable(True)
         advanced_toggle.setChecked(False)
         advanced_toggle.setStyleSheet(advanced_toggle_style())
@@ -145,7 +148,7 @@ class HomeOptionsPanel(QWidget):
 
         self.setLayout(layout)
 
-        self.progress_bar = ProgressBarWidget("Cargando malla...")
+        self.progress_bar = ProgressBarWidget("Loading mesh...")
         layout.addWidget(self.progress_bar)
         self.progress_bar.hide()
 
@@ -180,8 +183,8 @@ class HomeOptionsPanel(QWidget):
 
     def _create_viewer(self):
         viewer = QtInteractor()
-        viewer.set_background("white")          # Fondo blanco
-        viewer.setStyleSheet("background-color: #131313; border-radius: 5px;")
+        viewer.set_background("white")
+        viewer.setStyleSheet(viewer_frame_style())
         viewer.add_axes(interactive=False, line_width=2, color='black')
         viewer.setSizePolicy(QtW.QSizePolicy.Expanding, QtW.QSizePolicy.Expanding)
         viewer.view_yx()
@@ -322,7 +325,7 @@ class HomeOptionsPanel(QWidget):
 
         if new_params != self.simulation_state.prev_params_mesh:
             self.update_btn.setEnabled(False)
-            self.progress_bar.start("Cargando malla...")
+            self.progress_bar.start("Loading mesh...")
 
             print("🔄 ¡Parámetros cambiaron:", new_params)
             self.simulation_state.prev_params_mesh = new_params
@@ -347,13 +350,13 @@ class HomeOptionsPanel(QWidget):
 
         else:
             from PySide6.QtWidgets import QMessageBox
-            print("⚠️ No se han realizado cambios en la malla.")
+            print("No changes detected in the mesh parameters.")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
-            msg.setWindowTitle("Sin cambios detectados")
-            msg.setText("Debe modificar los parámetros para actualizar o recalcular la malla.")
+            msg.setWindowTitle("No changes detected")
+            msg.setText("You must modify the parameters to update or recompute the mesh.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.setStyleSheet(messagebox_style())
             msg.exec()
 
     def validar_numeros(self, campos, opcionales=None):
@@ -391,7 +394,7 @@ class HomeOptionsPanel(QWidget):
             return
 
         self.update_btn.setEnabled(True)
-        self.progress_bar.start("Cargando malla...")
+        self.progress_bar.start("Loading mesh...")
         self.progress_bar.finish()
         self.current_mesh = data
         self.main_window.View_Part.current_data = data
@@ -428,12 +431,12 @@ class HomeOptionsPanel(QWidget):
                 self.process = None
 
                 if exit_code != 0:
-                    # Proceso falló: mostrar advertencia con el error capturado
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Critical)
-                    msg.setWindowTitle("Error en el subproceso")
-                    msg.setText(f"El proceso finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
-                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.setWindowTitle("Subprocess error")
+                    msg.setText(f"The process failed with exit code {exit_code} after {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No error output was received.")
+                    msg.setStyleSheet(messagebox_style())
                     msg.exec()
                     self.progress_bar.finish()
                     self.update_btn.setEnabled(True)
@@ -441,14 +444,15 @@ class HomeOptionsPanel(QWidget):
                     self.simulation_state.prev_params_mesh = [None] * len(self.simulation_state.prev_params_mesh)
                     self.simulation_state.save_to_json(model("simulation_state.json"))
                 else:
-                    # Proceso OK: mostrar mensaje de éxito y continuar flujo normal
-                    print(f"[INFO] Proceso terminado exitosamente en {elapsed:.2f} s")
+                    print(f"[INFO] Process finished successfully in {elapsed:.2f} s")
                     self.simulation_state.field_outdated = True
                     self.simulation_state.magnetic_outdated = True
+                    self.main_window.refresh_dependency_state()
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Information)
-                    msg.setWindowTitle("Proceso completado (Mallado)")
-                    msg.setText("✅ El proceso se completó correctamente.\nApp is ready.")
+                    msg.setWindowTitle("Mesh generation completed")
+                    msg.setText("The process finished successfully.\nApp is ready.")
+                    msg.setStyleSheet(messagebox_style())
                     msg.exec()
                     loader = LoaderWorker(mode=loader_mode)
                     self.main_window.launch_worker(loader, finished_callback)
@@ -481,9 +485,9 @@ class HomeOptionsPanel(QWidget):
             print("⚠️ No hay malla cargada para mostrar.")
             return
 
-        if view_name == "Vista 3D":
+        if view_name == "3D View":
             mesh_to_show = self.current_mesh
-        elif view_name == "Plano YZ":
+        elif view_name == "YZ Plane":
             mesh_to_show = self.current_mesh.slice(normal='x')
         else:
             return

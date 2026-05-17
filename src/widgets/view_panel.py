@@ -29,11 +29,11 @@ class ViewPanel(QFrame):
         self.main_window = main_window
 
         self.setObjectName("VPartFrame")
-        self.setStyleSheet("background-color: #D3D3D3; border-left: 2px solid #818589;")
+        # Styling now lives in self_Style() (via QFrame#VPartFrame selector)
 
-        # Set up vertical layout with padding
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(0)
 
         # Initialize the stacked widget that will hold different views
         self.view_stack = QStackedWidget(self)

@@ -30,6 +30,7 @@ from widgets.panels.simulation_options import SimulationOptionsPanel  # Panel pa
 from widgets.panels.magnetic_field.magnetic_options import MagneticOptionsPanel  # Panel de opciones para campo magnético
 from widgets.panels.field_options import FieldOptionsPanel       # Panel de opciones para campo eléctrico
 from gui_styles.stylesheets import *                             # Estilos CSS para personalización de la interfaz
+from gui_styles.stylesheets import messagebox_style
 from widgets.parameter_views import ParameterPanel               # Panel para visualización y edición de parámetros
 from widgets.options_panel import OptionsPanel                   # Panel general para opciones diversas
 from widgets.view_panel import ViewPanel                         # Panel principal para visualización 3D
@@ -84,13 +85,16 @@ class MainWindow(QtW.QMainWindow):
         # Añadir el visor del campo magnético al panel principal de visualización
         self.View_Part.add_viewer("magnetic", self.magnetic_panel.magnetic_viewer)
 
+        # Initial banner / button state based on the persisted simulation state.
+        self.refresh_dependency_state()
+
     def _setup_ui(self):
         # Configuración del widget central y distribución principal de la ventana
 
         central_widget = QtW.QWidget()  # Widget contenedor principal
         self.frame = QtW.QHBoxLayout()  # Layout horizontal para distribuir columnas
-        self.frame.setSpacing(0)        # Eliminar espacios entre columnas
-        self.frame.setContentsMargins(0, 0, 0, 0)  # Sin márgenes externos
+        self.frame.setSpacing(0)
+        self.frame.setContentsMargins(0, 0, 0, 0)
 
         # Creación de las tres columnas principales: opciones, parámetros y vista principal
         self.Parameters = ParameterPanel(self)  # Panel para parámetros
@@ -122,21 +126,17 @@ class MainWindow(QtW.QMainWindow):
     def on_dynamic_tab_clicked(self, index, btn):
         # Gestión del cambio de pestañas: actualizar vista de parámetros y panel de visualización
 
-        self.parameters_view.setCurrentIndex(index)  # Cambiar índice de vista de parámetros
-        self.set_active_button(btn)                   # Actualizar estilo del botón activo
+        self.parameters_view.setCurrentIndex(index)
+        self.set_active_button(btn)
 
-        # Cambiar panel de visualización según la pestaña seleccionada
-        if index == 0:
-            self.View_Part.switch_view("mesh")
-        elif index == 1:
-            self.View_Part.switch_view("field")
-            self.alert_if_field_or_magnetic_outdated()
-        elif index == 2:
-            self.View_Part.switch_view("magnetic")
-            self.alert_if_field_or_magnetic_outdated()
-        elif index == 3:
-            self.View_Part.switch_view("simulation")
-            self.alert_if_field_or_magnetic_outdated()
+        view_keys = {0: "mesh", 1: "field", 2: "magnetic", 3: "simulation"}
+        if index in view_keys:
+            self.View_Part.switch_view(view_keys[index])
+
+        # Silent state refresh: enables/disables action buttons and refreshes inline banners.
+        # No modal alerts on tab switch — prerequisite warnings are surfaced either as inline
+        # banners inside each panel or only when the user clicks an action button.
+        self.refresh_dependency_state()
 
     def set_active_button(self, active_btn):
         # Actualizar estilos visuales para resaltar el botón actualmente activo
@@ -145,6 +145,8 @@ class MainWindow(QtW.QMainWindow):
                 btn.setStyleSheet(button_activate_style())
             else:
                 btn.setStyleSheet(button_options_style())
+        if hasattr(self.Options, "refresh_icons"):
+            self.Options.refresh_icons(active_btn)
 
     def launch_worker(self, worker, finished_callback):
         # Crear y lanzar un hilo para ejecutar una tarea en segundo plano mediante un worker
@@ -172,49 +174,31 @@ class MainWindow(QtW.QMainWindow):
         # Iniciar ejecución del hilo
         thread.start()
 
+    def refresh_dependency_state(self):
+        """
+        Refresh action-button enablement and inline alert banners across panels
+        based on the current outdated flags.
+
+        Silent: never shows a modal popup.
+        """
+        if hasattr(self.simulation_panel, "update_simulate_button_state"):
+            self.simulation_panel.update_simulate_button_state()
+        if hasattr(self.magnetic_panel, "update_magnetic_button_state"):
+            self.magnetic_panel.update_magnetic_button_state()
+        if hasattr(self.magnetic_panel, "refresh_banner"):
+            self.magnetic_panel.refresh_banner()
+        if hasattr(self.simulation_panel, "refresh_banner"):
+            self.simulation_panel.refresh_banner()
+
+    # Backwards-compatible alias kept for any caller still using the old name.
     def alert_if_field_or_magnetic_outdated(self):
-        # Verificar si los campos eléctrico o magnético están desactualizados y notificar al usuario
+        self.refresh_dependency_state()
 
-        state = self.simulation_state
-
-        # Actualizar estado visual de los botones relacionados con simulación y campo magnético
-        self.simulation_panel.update_simulate_button_state()
-        self.magnetic_panel.update_magnetic_button_state()
-
-        message = ""
-        if state.field_outdated and state.magnetic_outdated:
-            message = (
-                "Debe actualizar el campo eléctrico y el campo magnético "
-                "tras modificar el dominio de simulación para obtener resultados precisos."
-            )
-        elif state.field_outdated:
-            message = "Debe actualizar el campo eléctrico tras modificar el dominio de simulación."
-        elif state.magnetic_outdated:
-            message = "Debe actualizar el campo magnético tras modificar el dominio de simulación."
-
-        # Mostrar diálogo de advertencia personalizado si es necesario
-        if message:
-            box = QMessageBox(self)
-            box.setWindowTitle("Actualizar campos")
-            box.setText(message)
-            box.setIcon(QMessageBox.Warning)
-            box.setStyleSheet("""
-                QMessageBox {
-                    background-color: #121212;
-                    color: #f5f5f5;
-                }
-                QLabel {
-                    color: #f5f5f5;
-                }
-                QPushButton {
-                    background-color: #23272b;
-                    color: #f5f5f5;
-                    border: 1px solid #444;
-                    border-radius: 6px;
-                    padding: 6px 18px;
-                }
-                QPushButton:hover {
-                    background-color: #32373a;
-                }
-            """)
-            box.exec()
+    def show_prerequisite_alert(self, title: str, message: str):
+        """Modal warning card shown right before running an action that lacks prerequisites."""
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(message)
+        box.setIcon(QMessageBox.Warning)
+        box.setStyleSheet(messagebox_style())
+        box.exec()

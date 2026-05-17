@@ -28,6 +28,7 @@ from PySide6.QtCore import QTimer
 from mesh_generator import HallThrusterMesh
 from electric_field_solver import ElectricFieldSolver
 from gui_styles.stylesheets import *
+from gui_styles.stylesheets import messagebox_style, viewer_frame_style
 from widgets.parameter_views import ParameterPanel
 from widgets.options_panel import OptionsPanel
 from widgets.view_panel import ViewPanel
@@ -46,27 +47,28 @@ class FieldOptionsPanel(QWidget):
         self.simulation_state = self.main_window.simulation_state
         self.setStyleSheet("background-color: transparent;")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-        # ──────────────────────────────────────────────────────────────
-        # 1. Grupo: Parámetros de simulación física
-        field_box = QGroupBox("⚡ Parámetros físicos (Simulación)")
+        # 1. Physical parameters
+        field_box = QGroupBox("Physical parameters")
         field_box.setStyleSheet(box_render_style())
         sim_layout = QFormLayout()
 
-        lbl_volt = QLabel("Voltaje de ánodo [V]:")
-        lbl_volt.setToolTip("Diferencia de potencial aplicada entre el ánodo y el cátodo.")
+        lbl_volt = QLabel("Anode voltage:")
+        lbl_volt.setToolTip("Potential difference applied between the anode and the cathode.")
         self.input_Volt_container, self.input_Volt = _input_with_unit(str(self.simulation_state.voltage), "[V]")
 
-        lbl_cath = QLabel("Voltaje de cátodo [V]:")
-        lbl_cath.setToolTip("Potencial aplicado al cátodo respecto a tierra.")
+        lbl_cath = QLabel("Cathode voltage:")
+        lbl_cath.setToolTip("Potential applied to the cathode relative to ground.")
 
         self.input_Volt_Cath_container, self.input_Volt_Cath = _input_with_unit(str(self.simulation_state.voltage_cathode), "[V]")
 
         sim_layout.addRow(lbl_volt, self.input_Volt_container)
         sim_layout.addRow(lbl_cath, self.input_Volt_Cath_container)
 
-        self.charge_density_check = QCheckBox("Habilitar densidad de carga")
-        self.charge_density_check.setToolTip("Activa la resolución de Poisson incluyendo densidad electrónica.")
+        self.charge_density_check = QCheckBox("Enable charge density")
+        self.charge_density_check.setToolTip("Solve Poisson including the electron density.")
         self.charge_density_check.setChecked(False)
         self.charge_density_check.setStyleSheet(checkbox_parameters_style())
         # self.charge_density_check.stateChanged.connect(
@@ -83,50 +85,48 @@ class FieldOptionsPanel(QWidget):
         field_box.setLayout(sim_layout)
         layout.addWidget(field_box)
 
-        # ──────────────────────────────────────────────────────────────
-        # 2. Grupo: Acciones de simulación
-        actions_box = QGroupBox("Acciones de simulación")
+        # 2. Simulation actions
+        actions_box = QGroupBox("Actions")
         actions_box.setStyleSheet(box_render_style())
         actions_layout = QHBoxLayout()
-        self.update_btn = QPushButton("Actualizar campo")
+        self.update_btn = QPushButton("Update field")
         self.update_btn.setStyleSheet(button_parameters_style())
-        self.update_btn.setToolTip("Ejecuta el cálculo del campo eléctrico con los parámetros actuales.")
+        self.update_btn.setToolTip("Run the electric field computation with the current parameters.")
         self.update_btn.clicked.connect(self.on_update_clicked_Electric_field)
         actions_layout.addWidget(self.update_btn)
         actions_box.setLayout(actions_layout)
         layout.addWidget(actions_box)
 
-        # ──────────────────────────────────────────────────────────────
-        # 3. Grupo: Visualización
-        vis_box = QGroupBox("Parámetros de visualización")
+        # 3. Visualization
+        vis_box = QGroupBox("Visualization")
         vis_box.setStyleSheet(box_render_style())
         vis_layout = QFormLayout()
 
-        lbl_quantity = QLabel("Magnitud a visualizar:")
-        lbl_quantity.setToolTip("Selecciona entre campo eléctrico o densidad electrónica.")
+        lbl_quantity = QLabel("Quantity:")
+        lbl_quantity.setToolTip("Pick between electric field or electron density.")
         self.combo = QComboBox()
         self.combo.addItems(["Electric Field", "Electron Density"])
         self.combo.setStyleSheet(box_render_style())
         self.combo.currentTextChanged.connect(self.switch_dataset)
         vis_layout.addRow(lbl_quantity, self.combo)
 
-        lbl_viewmode = QLabel("Modo de vista:")
-        lbl_viewmode.setToolTip("Vista 3D o corte 2D en el plano ZY.")
+        lbl_viewmode = QLabel("View mode:")
+        lbl_viewmode.setToolTip("3D view or 2D slice on the ZY plane.")
         self.view_mode_combo = QComboBox()
         self.view_mode_combo.addItems(["3D", "2D Slice ZY"])
         self.view_mode_combo.setStyleSheet(box_render_style())
         self.view_mode_combo.currentTextChanged.connect(self.update_view_mode)
         vis_layout.addRow(lbl_viewmode, self.view_mode_combo)
 
-        lbl_zslice = QLabel("Plano X para corte (solo modo 2D):")
-        lbl_zslice.setToolTip("Valor de X donde se realiza el corte (en metros).")
+        lbl_zslice = QLabel("Slice plane X (2D only):")
+        lbl_zslice.setToolTip("X value where the slice is taken (meters).")
         self.z_value_edit = QLineEdit()
-        self.z_value_edit.setPlaceholderText("Ej: 0.01")
+        self.z_value_edit.setPlaceholderText("e.g. 0.01")
         self.z_value_edit.setEnabled(False)
         self.z_value_edit.editingFinished.connect(self.update_z_value)
         vis_layout.addRow(lbl_zslice, self.z_value_edit)
 
-        lbl_viewdir = QLabel("Orientación de cámara:")
+        lbl_viewdir = QLabel("Camera orientation:")
         self.view_direction_combo = QComboBox()
         self.view_direction_combo.addItems([
             "Isometric", "XY (Top)", "ZY (Front)", "ZX (Side)", "XZ (Bottom)", "YX (Back)"
@@ -137,7 +137,7 @@ class FieldOptionsPanel(QWidget):
         vis_box.setLayout(vis_layout)
         layout.addWidget(vis_box)
 
-        self.progress_bar = ProgressBarWidget("Calculando campo eléctrico...")
+        self.progress_bar = ProgressBarWidget("Computing electric field...")
         layout.addWidget(self.progress_bar)
         self.progress_bar.hide()
 
@@ -169,7 +169,7 @@ class FieldOptionsPanel(QWidget):
     def _create_viewer(self):
         viewer = QtInteractor()
         viewer.set_background("white")
-        viewer.setStyleSheet("background-color: white; border-radius: 5px;")
+        viewer.setStyleSheet(viewer_frame_style())
         viewer.add_axes(interactive=False)
         viewer.setSizePolicy(QtW.QSizePolicy.Expanding, QtW.QSizePolicy.Expanding)
         viewer.view_zx()
@@ -204,10 +204,10 @@ class FieldOptionsPanel(QWidget):
         }
         print("validate density:", validate_density)
         if new_params != self.simulation_state.prev_params_field or self.simulation_state.field_outdated:
-            print("🔄 ¡Parámetros cambiaron:", new_params)
+            print("Parameters changed:", new_params)
             self.simulation_state.prev_params_field = new_params
             self.simulation_state.save_to_json(model("simulation_state.json"))
-            self.progress_bar.start("Calculando campo eléctrico...")
+            self.progress_bar.start("Computing electric field...")
             self.update_btn.setEnabled(False)
 
             self.run_process_and_reload(
@@ -218,13 +218,13 @@ class FieldOptionsPanel(QWidget):
             return
         else:
             from PySide6.QtWidgets import QMessageBox
-            print("⚠️ No se han realizado cambios en los parámetros del campo.")
+            print("No changes detected in field parameters.")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
-            msg.setWindowTitle("Sin cambios detectados")
-            msg.setText("Debe cambiar los parámetros para ejecutar una nueva simulación del campo eléctrico.")
+            msg.setWindowTitle("No changes detected")
+            msg.setText("You must change the parameters to run a new electric field simulation.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.setStyleSheet(messagebox_style())
             msg.exec()
 
         self.loader_worker_field = LoaderWorker(
@@ -264,8 +264,8 @@ class FieldOptionsPanel(QWidget):
     def on_field_loaded_file(self, data):
         self.simulation_state.field_outdated = False
         self.current_field = data
-        self.simulation_state.field_outdated = False
         self.simulation_state.save_to_json(model("simulation_state.json"))
+        self.main_window.refresh_dependency_state()
         self.update_view()
 
     def on_density_loaded(self, data):
@@ -335,7 +335,7 @@ class FieldOptionsPanel(QWidget):
             inverted_pos = (2*fp[0] - pos[0], 2*fp[1] - pos[1], 2*fp[2] - pos[2])
             self.field_viewer.camera_position = [inverted_pos, fp, viewup]
             self.field_viewer.reset_camera()
-            self.field_viewer.add_text("Campo eléctrico", position='upper_edge', font_size=6, color='black')
+            self.field_viewer.add_text("Electric field", position='upper_edge', font_size=6, color='black')
         elif mode == "2D Slice ZY":
             # ---- PROYECTAR EN EL PLANO X = x_plane ----
             x_plane = self.current_z_value
@@ -344,7 +344,7 @@ class FieldOptionsPanel(QWidget):
             mask = np.abs(mesh.points[:, 0] - x_plane) <= tolerance
 
             if not np.any(mask):
-                self.field_viewer.add_text("Sin datos en este plano", color="black", font_size=16)
+                self.field_viewer.add_text("No data on this plane", color="black", font_size=16)
                 return
 
             # Proyectar puntos al plano X=x_plane
@@ -353,7 +353,7 @@ class FieldOptionsPanel(QWidget):
 
             # Proyectar solo las componentes Z, Y del campo (poniendo X=0)
             if "E_field" not in mesh.point_data:
-                self.field_viewer.add_text("No hay campo E_field en los datos", color="black", font_size=16)
+                self.field_viewer.add_text("No E_field data available", color="black", font_size=16)
                 return
             vectors = mesh.point_data["E_field"][mask]
             vectors_proj = vectors.copy()
@@ -387,7 +387,7 @@ class FieldOptionsPanel(QWidget):
 
 
             self.field_viewer.view_zy()
-            self.field_viewer.add_text("Campo eléctrico (proyección ZY)", position='upper_edge', font_size=12, color='black')
+            self.field_viewer.add_text("Electric field (ZY projection)", position='upper_edge', font_size=12, color='black')
         # Puedes agregar aquí el modo de líneas de campo (ver más abajo)
         self.field_viewer.reset_camera()
 
@@ -491,13 +491,13 @@ class FieldOptionsPanel(QWidget):
                     }
                 )
                 self.field_viewer.view_zy()
-                self.field_viewer.add_text("Distribución de Densidad Electrónica", position='upper_edge', font_size=12, color='black')
+                self.field_viewer.add_text("Electron density distribution", position='upper_edge', font_size=12, color='black')
 
             else:
                 print("No hay puntos en el plano Z={} para la densidad.".format(self.current_z_value))
                 # Opcional: Puedes mostrar un mensaje en el viewer o limpiar la vista
                 self.field_viewer.clear()
-                self.field_viewer.add_text(f"Sin datos en Z={self.current_z_value:.2f}", color="black", font_size=16)
+                self.field_viewer.add_text(f"No data at Z={self.current_z_value:.2f}", color="black", font_size=16)
         self.field_viewer.reset_camera()
 
     def update_view_mode(self, mode):
@@ -585,21 +585,23 @@ class FieldOptionsPanel(QWidget):
                 if exit_code != 0:
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Critical)
-                    msg.setWindowTitle("Error en el subproceso")
-                    msg.setText(f"El proceso finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
-                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.setWindowTitle("Subprocess error")
+                    msg.setText(f"The process failed with exit code {exit_code} after {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No error output was received.")
+                    msg.setStyleSheet(messagebox_style())
                     msg.exec()
                     self.update_btn.setEnabled(True)
                     self.progress_bar.finish()
-                    print(f"[ERROR] Subproceso falló: {stderr}")
+                    print(f"[ERROR] Subprocess failed: {stderr}")
                     self.simulation_state.prev_params_field = [None] * len(self.simulation_state.prev_params_field)
                     self.simulation_state.save_to_json(model("simulation_state.json"))
                 else:
-                    print(f"[INFO] Proceso terminado exitosamente en {elapsed:.2f} s")
+                    print(f"[INFO] Process finished successfully in {elapsed:.2f} s")
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Information)
-                    msg.setWindowTitle("Proceso completado (Campo electrico)")
-                    msg.setText("✅ El proceso se completó correctamente.\nApp is ready.")
+                    msg.setWindowTitle("Electric field computed")
+                    msg.setText("The process finished successfully.\nApp is ready.")
+                    msg.setStyleSheet(messagebox_style())
                     msg.exec()
 
                     loader = LoaderWorker(

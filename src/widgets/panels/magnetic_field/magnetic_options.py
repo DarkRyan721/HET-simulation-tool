@@ -32,6 +32,8 @@ import PySide6.QtWidgets as QtW
 
 from utils.ui_helpers import _input_with_unit
 from gui_styles.stylesheets import *
+from gui_styles.stylesheets import messagebox_style, viewer_frame_style
+from widgets.alert_banner import AlertBanner
 # TODO: Importar el solver y el loader apropiados para el campo magnético
 # from E_field_solver import MagneticFieldSolver
 # from utils.magnetic_loader import MagneticLoaderWorker
@@ -57,7 +59,17 @@ class MagneticOptionsPanel(QWidget):
         self.simulation_state = self.main_window.simulation_state
         self.setStyleSheet("background-color: transparent;")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
         self.thread = QThread()
+
+        self.dependency_banner = AlertBanner(
+            title="Prerequisites required",
+            message="Update the electric field first.",
+            level="warning",
+        )
+        self.dependency_banner.hide()
+        layout.addWidget(self.dependency_banner)
         self.plot_result_ready.connect(self._on_plot_result_ready)
 
         # Parámetros magnéticos
@@ -81,19 +93,20 @@ class MagneticOptionsPanel(QWidget):
         self.mpl_canvas = None  # Se crea bajo demanda
 
 
-        mag_box = QGroupBox("Magnetic Field Parameters")
+        mag_box = QGroupBox("Magnetic field parameters")
+        mag_box.setStyleSheet(box_render_style())
         mag_box.setSizePolicy(QtW.QSizePolicy.Policy.Expanding, QtW.QSizePolicy.Policy.Fixed)
         form = QFormLayout()
-        form.addRow("nSteps:", self.input_nSteps_container)
-        form.addRow("Número de vueltas N_turns:", self.input_N_turns_container)
-        form.addRow("Corriente i:", self.input_i_container)
+        form.addRow("Integration steps (nSteps):", self.input_nSteps_container)
+        form.addRow("Number of turns (N_turns):", self.input_N_turns_container)
+        form.addRow("Current (I):", self.input_i_container)
         mag_box.setLayout(form)
         layout.addWidget(mag_box)
 
 
-        # Botón de actualización
-        self.update_btn = QPushButton("Update")
+        self.update_btn = QPushButton("Update field")
         self.update_btn.setStyleSheet(button_parameters_style())
+        self.update_btn.setToolTip("Run the magnetic field computation with the current parameters.")
         self.update_btn.clicked.connect(self.on_update_clicked_Magnetic_field)
         layout.addWidget(self.update_btn)
 
@@ -110,7 +123,7 @@ class MagneticOptionsPanel(QWidget):
         layout.addWidget(self.field_lines_controls)
         layout.addWidget(self.heatmap_controls)
 
-        self.progress_bar = ProgressBarWidget("Cargando malla...")
+        self.progress_bar = ProgressBarWidget("Loading mesh...")
         layout.addWidget(self.progress_bar)
         self.progress_bar.hide()
         # self.progress_bar = QtW.QProgressBar()
@@ -125,10 +138,25 @@ class MagneticOptionsPanel(QWidget):
         self._load_initial_magnetic_if_exists()
 
     def update_magnetic_button_state(self):
+        """Keep buttons enabled — pre-action validation handles missing prerequisites."""
+        self.set_buttons_enabled(True)
+
+    def _missing_prerequisites_message(self) -> str | None:
         if self.simulation_state.field_outdated:
-            self.set_buttons_enabled(False)
+            return "The electric field must be updated before computing the magnetic field."
+        return None
+
+    def refresh_banner(self):
+        msg = self._missing_prerequisites_message()
+        if msg:
+            self.dependency_banner.set_content(
+                title="Prerequisites required",
+                message=msg,
+                level="warning",
+            )
+            self.dependency_banner.show()
         else:
-            self.set_buttons_enabled(True)
+            self.dependency_banner.hide()
 
     def set_buttons_enabled(self, enabled: bool):
         # Aquí agrega todos los botones que deseas deshabilitar/habilitar
@@ -138,6 +166,11 @@ class MagneticOptionsPanel(QWidget):
         self.update_btn.setEnabled(enabled)
 
     def on_update_clicked_Magnetic_field(self):
+        prereq_msg = self._missing_prerequisites_message()
+        if prereq_msg:
+            self.main_window.show_prerequisite_alert("Update fields", prereq_msg)
+            return
+
         # Recolecta campos obligatorios y avanzados
         campos = {
             "nSteps": self.input_nSteps.text(),
@@ -149,7 +182,7 @@ class MagneticOptionsPanel(QWidget):
             valores = self.validar_numeros(campos)
         except ValueError as e:
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Error de validación", str(e))
+            QMessageBox.critical(self, "Validation error", str(e))
             return
 
         nSteps = int(valores["nSteps"])
@@ -159,15 +192,14 @@ class MagneticOptionsPanel(QWidget):
         self.simulation_state.N_turns = N_turns
         self.simulation_state.I = I
 
-        self.progress_bar.start("Cargando malla...")
+        self.progress_bar.start("Computing magnetic field...")
         self.set_buttons_enabled(False)
         new_params = [nSteps, N_turns, I]
         if new_params != self.simulation_state.prev_params_magnetic or self.simulation_state.magnetic_outdated:
             self.progress_bar.start()
-            print("🔄 Parámetros magnéticos cambiaron:", new_params)
+            print("Magnetic parameters changed:", new_params)
             self.simulation_state.prev_params_magnetic = new_params
             self.simulation_state.save_to_json(model("simulation_state.json"))
-            print("Entrando en run process.")
             self.run_process_and_reload(
                 process_script="magnetic_field_process.py",
                 loader_mode="magnetic",
@@ -175,13 +207,13 @@ class MagneticOptionsPanel(QWidget):
             )
         else:
             from PySide6.QtWidgets import QMessageBox
-            print("⚠️ No se han realizado cambios en los parámetros magnéticos.")
+            print("No changes detected in magnetic parameters.")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
-            msg.setWindowTitle("Sin cambios detectados")
-            msg.setText("⚠️ Debe cambiar los parámetros para ejecutar una nueva simulación del campo magnético.")
+            msg.setWindowTitle("No changes detected")
+            msg.setText("You must change the parameters to run a new magnetic field simulation.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.setStyleSheet(messagebox_style())
             msg.exec()
             self.main_window.launch_worker(LoaderWorker(mode="magnetic"), self.on_magnetic_loaded)
         self.simulation_state.print_state()
@@ -235,22 +267,24 @@ class MagneticOptionsPanel(QWidget):
                 if exit_code != 0:
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Critical)
-                    msg.setWindowTitle("Error en el subproceso")
-                    msg.setText(f"El proceso finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
-                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.setWindowTitle("Subprocess error")
+                    msg.setText(f"The process failed with exit code {exit_code} after {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No error output was received.")
+                    msg.setStyleSheet(messagebox_style())
                     msg.exec()
                     self.process_finished = True
                     self.set_buttons_enabled(True)
                     self.progress_bar.finish()
                     self.simulation_state.prev_params_magnetic = [None] * len(self.simulation_state.prev_params_magnetic)
                     self.simulation_state.save_to_json(model("simulation_state.json"))
-                    print(f"[ERROR] Subproceso falló: {stderr}")
+                    print(f"[ERROR] Subprocess failed: {stderr}")
                 else:
-                    print(f"[INFO] Proceso terminado exitosamente en {elapsed:.2f} s")
+                    print(f"[INFO] Process finished successfully in {elapsed:.2f} s")
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Information)
-                    msg.setWindowTitle("Proceso completado (Campo magnetico)")
-                    msg.setText("✅ El proceso se completó correctamente.\nApp is ready.")
+                    msg.setWindowTitle("Magnetic field computed")
+                    msg.setText("The process finished successfully.\nApp is ready.")
+                    msg.setStyleSheet(messagebox_style())
                     msg.exec()
 
                     loader = LoaderWorker(mode=loader_mode)
@@ -270,8 +304,9 @@ class MagneticOptionsPanel(QWidget):
     def on_magnetic_loaded_file(self, data):
             self.current_magnetic = data
             self.simulation_state.magnetic_outdated = False
-            self.main_window.View_Part.current_data = data  # asegúrate de sincronizar ViewPanel
+            self.main_window.View_Part.current_data = data
             self.simulation_state.save_to_json(model("simulation_state.json"))
+            self.main_window.refresh_dependency_state()
             self.visualize_magnetic(data)
             self.progress_bar.finish()
             self.set_buttons_enabled(True)
@@ -282,14 +317,14 @@ class MagneticOptionsPanel(QWidget):
         self.magnetic_viewer.add_mesh(
             glyphs, scalars="magnitude", cmap="magma", scalar_bar_args={"title": "|B| [T]"}
         )
-        self.magnetic_viewer.add_text("Campo magnetico", position='upper_edge', font_size=6, color='black')
+        self.magnetic_viewer.add_text("Magnetic field", position='upper_edge', font_size=6, color='black')
         self.magnetic_viewer.reset_camera()
         self.magnetic_viewer.view_yx()
 
     def _create_viewer(self):
         viewer = QtInteractor()
         viewer.set_background("white")
-        viewer.setStyleSheet("background-color: white; border-radius: 5px;")
+        viewer.setStyleSheet(viewer_frame_style())
         viewer.add_axes(interactive=False)
         viewer.setSizePolicy(QtW.QSizePolicy.Expanding, QtW.QSizePolicy.Expanding)
         viewer.view_zx()
@@ -346,7 +381,7 @@ class MagneticOptionsPanel(QWidget):
         self.main_window.View_Part.switch_view(name)
 
     def _start_plot_thread(self, plot_func, finished_callback):
-        self.progress_bar.start("Cargando malla...")
+        self.progress_bar.start("Loading data...")
         self.set_buttons_enabled(False)
         thread = QThread()
         worker = PlotWorker(plot_func)
@@ -390,7 +425,7 @@ class MagneticOptionsPanel(QWidget):
         self.show_matplotlib_figure(fig, name)
 
     def _show_solenoid_points_viewer(self):
-        self.progress_bar.start("Cargando malla...")
+        self.progress_bar.start("Loading data...")
         self.set_buttons_enabled(False)
         print("[DEBUG] Mostrando Solenoid Points Viewer")
         print("[DEBUG] Viewers antes:", self.main_window.View_Part.viewers.keys())
@@ -421,7 +456,7 @@ class MagneticOptionsPanel(QWidget):
 
     def generate_heatmap_threaded(self):
         print("[DEBUG] Generando Heatmap en un hilo separado")
-        self.progress_bar.start("Cargando malla...")
+        self.progress_bar.start("Loading data...")
         self.set_buttons_enabled(False)
         params = self.heatmap_controls.get_params()
         bfield = B_Field(
@@ -499,7 +534,7 @@ class MagneticOptionsPanel(QWidget):
 
         if not os.path.exists(output_path):
             # Lanza el proceso, preferiblemente en un QThread (ejemplo aquí sin QThread)
-            self.progress_bar.start("Cargando malla...")
+            self.progress_bar.start("Loading data...")
             self.set_buttons_enabled(False)
             ok = self.generate_magnetic_image(mode, nSteps, N_turns, I, params, output_path)
             self.progress_bar.finish()
@@ -527,7 +562,7 @@ class MagneticOptionsPanel(QWidget):
 
         if not os.path.exists(output_path):
             # Lanza el proceso bloqueante (puedes migrar a QThread luego)
-            self.progress_bar.start("Cargando malla...")
+            self.progress_bar.start("Loading data...")
             self.set_buttons_enabled(False)
             ok = self.generate_magnetic_image(mode, nSteps, N_turns, I, params, output_path)
             self.progress_bar.finish()

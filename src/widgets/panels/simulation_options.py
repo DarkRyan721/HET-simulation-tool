@@ -31,6 +31,8 @@ from models.simulation_state import SimulationState
 from simulation_engine_viewer import Simulation
 from utils.ui_helpers import _input_with_unit
 from gui_styles.stylesheets import *
+from gui_styles.stylesheets import messagebox_style
+from widgets.alert_banner import AlertBanner
 from utils.loader_thread import LoaderWorker
 from PySide6.QtWidgets import QHBoxLayout
 
@@ -41,19 +43,29 @@ class SimulationOptionsPanel(QWidget):
         self.simulation_state = self.main_window.simulation_state
         self.setStyleSheet("background-color: transparent;")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-        sim_box = QGroupBox("🧮 Parámetros de Simulación")
+        self.dependency_banner = AlertBanner(
+            title="Prerequisites required",
+            message="Update the electric and magnetic fields first.",
+            level="warning",
+        )
+        self.dependency_banner.hide()
+        layout.addWidget(self.dependency_banner)
+
+        sim_box = QGroupBox("Simulation parameters")
         sim_box.setStyleSheet(box_render_style())
         sim_layout = QFormLayout()
 
-        lbl_n_particles = QLabel("Número de partículas (N):")
-        lbl_n_particles.setToolTip("Cantidad total de partículas simuladas en el dominio.")
+        lbl_n_particles = QLabel("Number of particles (N):")
+        lbl_n_particles.setToolTip("Total number of particles simulated in the domain.")
         self.input_N_particles_container, self.input_N_particles = _input_with_unit(
             str(self.simulation_state.N_particles), "[#]"
         )
 
-        lbl_frames = QLabel("Frames de animación:")
-        lbl_frames.setToolTip("Número de pasos de simulación/frames visualizados.")
+        lbl_frames = QLabel("Animation frames:")
+        lbl_frames.setToolTip("Number of simulation steps/frames displayed.")
 
         self.input_frames_container, self.input_frames = _input_with_unit(
             str(self.simulation_state.frames), "[#]"
@@ -62,13 +74,13 @@ class SimulationOptionsPanel(QWidget):
         sim_layout.addRow(lbl_n_particles, self.input_N_particles)
         sim_layout.addRow(lbl_frames, self.input_frames)
 
-        lbl_gas = QLabel("Gas de trabajo:")
-        lbl_gas.setToolTip("Selecciona el gas con el que se simula la descarga.")
+        lbl_gas = QLabel("Working gas:")
+        lbl_gas.setToolTip("Gas used to simulate the discharge.")
         self.view_mode_combo = QComboBox()
         self.view_mode_combo.addItems([
-            "Xenón (Xe) – estándar en propulsión",
-            "Argón (Ar) – experimental, menor masa",
-            "Helio (He) – alta movilidad, muy ligero"
+            "Xenon (Xe) – propulsion standard",
+            "Argon (Ar) – experimental, lower mass",
+            "Helium (He) – high mobility, very light"
         ])
         self.view_mode_combo.setStyleSheet(box_render_style())
         sim_layout.addRow(lbl_gas, self.view_mode_combo)
@@ -76,30 +88,31 @@ class SimulationOptionsPanel(QWidget):
         sim_box.setLayout(sim_layout)
         layout.addWidget(sim_box)
 
-        controls_box = QGroupBox("Controles de simulación")
+        controls_box = QGroupBox("Simulation controls")
         controls_box.setStyleSheet(box_render_style())
         controls_layout = QHBoxLayout()
 
-        self.start_btn = QPushButton("▶️ Simular")
+        self.start_btn = QPushButton("Simulate")
         self.start_btn.setStyleSheet(button_parameters_style())
-        self.start_btn.setToolTip("Inicia o reanuda la simulación de partículas.")
+        self.start_btn.setToolTip("Start or resume the particle simulation.")
         self.start_btn.clicked.connect(self.on_run_simulation)
         controls_layout.addWidget(self.start_btn)
 
-        self.pause_btn = QPushButton("⏸️ Run")
+        self.pause_btn = QPushButton("Run")
         self.pause_btn.setStyleSheet(button_parameters_style())
         self.pause_btn.clicked.connect(self.on_pause_resume_clicked)
         controls_layout.addWidget(self.pause_btn)
 
-        self.enable_checkbox = QCheckBox("Habilitar computacion grafica")
+        self.enable_checkbox = QCheckBox("Enable GPU computation")
         self.enable_checkbox.setChecked(self.simulation_state.GPU_ACTIVE)
-        self.enable_checkbox.setToolTip("Activa o desactiva el uso de CUDA (Nvidia).")
+        self.enable_checkbox.setToolTip("Enable or disable CUDA (Nvidia) acceleration.")
+        self.enable_checkbox.setStyleSheet(checkbox_style())
         controls_layout.addWidget(self.enable_checkbox)
 
         controls_box.setLayout(controls_layout)
         layout.addWidget(controls_box)
 
-        advanced_toggle = QPushButton("Opciones avanzadas")
+        advanced_toggle = QPushButton("Advanced options")
         advanced_toggle.setCheckable(True)
         advanced_toggle.setChecked(False)
         advanced_toggle.setStyleSheet(advanced_toggle_style())
@@ -112,21 +125,21 @@ class SimulationOptionsPanel(QWidget):
         self.input_alpha_container, self.input_alpha = _input_with_unit(
             str(self.simulation_state.alpha), "[adim]"
         )
-        self.input_alpha_container.setToolTip("Coeficiente de recombinación/adimensional para el modelo.")
+        self.input_alpha_container.setToolTip("Recombination / dimensionless model coefficient.")
 
         self.input_sigma_ion_container, self.input_sigma_ion = _input_with_unit(
             str(self.simulation_state.sigma_ion), "[m²]"
         )
-        self.input_sigma_ion_container.setToolTip("Sección eficaz de ionización (m²).")
+        self.input_sigma_ion_container.setToolTip("Ionization cross-section (m²).")
 
         self.input_dt_container, self.input_dt = _input_with_unit(
             str(self.simulation_state.dt), "[s]"
         )
-        self.input_dt_container.setToolTip("Paso temporal de integración.")
+        self.input_dt_container.setToolTip("Integration time step.")
 
         advanced_content_layout.addRow("Alpha:", self.input_alpha_container)
         advanced_content_layout.addRow("Sigma ion:", self.input_sigma_ion_container)
-        advanced_content_layout.addRow("Delta time:", self.input_dt_container)
+        advanced_content_layout.addRow("Time step:", self.input_dt_container)
 
         def toggle_advanced():
             advanced_content.setVisible(advanced_toggle.isChecked())
@@ -136,22 +149,22 @@ class SimulationOptionsPanel(QWidget):
 
         layout.addWidget(advanced_content)
 
-        self.progress_bar = ProgressBarWidget("Cargando simulación...")
+        self.progress_bar = ProgressBarWidget("Loading simulation...")
         layout.addWidget(self.progress_bar)
         self.progress_bar.hide()
 
-        output_box = QGroupBox("📊 Resultados de Simulación")
+        output_box = QGroupBox("Simulation results")
         output_box.setStyleSheet(box_render_style())
         output_layout = QVBoxLayout(output_box)
-        self.label_impulso = QLabel(f"Impulso específico: <b>{self.simulation_state.impulso_especifico}</b>")
-        self.label_tiempo = QLabel(f"Tiempo de simulación: <b>{self.simulation_state.time_simulation}</b>")
-        self.label_frames = QLabel(f"Número de frames: <b>{self.simulation_state.frames}</b>")
+        self.label_impulso = QLabel(f"Specific impulse: <b>{self.simulation_state.impulso_especifico}</b>")
+        self.label_tiempo = QLabel(f"Simulation time: <b>{self.simulation_state.time_simulation}</b>")
+        self.label_frames = QLabel(f"Frame count: <b>{self.simulation_state.frames}</b>")
         output_layout.addWidget(self.label_impulso)
         output_layout.addWidget(self.label_tiempo)
         output_layout.addWidget(self.label_frames)
         layout.addWidget(output_box)
 
-        self.progress_bar = ProgressBarWidget("Simulando partículas...")
+        self.progress_bar = ProgressBarWidget("Simulating particles...")
         layout.addWidget(self.progress_bar)
         self.progress_bar.hide()
 
@@ -178,6 +191,11 @@ class SimulationOptionsPanel(QWidget):
         self.simulation_state = self.main_window.simulation_state
 
     def on_run_simulation(self):
+        prereq_msg = self._missing_prerequisites_message()
+        if prereq_msg:
+            self.main_window.show_prerequisite_alert("Update fields", prereq_msg)
+            return
+
         campos = {
             "N_particles": self.input_N_particles.text(),
             "frames": self.input_frames.text(),
@@ -191,7 +209,7 @@ class SimulationOptionsPanel(QWidget):
             valores = self.validar_numeros(campos, opcionales=opcionales)
         except ValueError as e:
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Error de validación", str(e))
+            QMessageBox.critical(self, "Validation error", str(e))
             return
 
         N_particles = int(valores["N_particles"])
@@ -209,13 +227,13 @@ class SimulationOptionsPanel(QWidget):
 
         gas_combo_index = self.view_mode_combo.currentIndex()
         gas_combo_text = self.view_mode_combo.currentText()
-        if "Xenón" in gas_combo_text:
+        if "Xenon" in gas_combo_text or "Xenón" in gas_combo_text:
             gas = "Xenon"
-        elif "Argón" in gas_combo_text:
+        elif "Argon" in gas_combo_text or "Argón" in gas_combo_text:
             gas = "Argon"
-        elif "Helio" in gas_combo_text:
+        elif "Helium" in gas_combo_text or "Helio" in gas_combo_text:
             gas = "Helium"
-        elif "Kriptón" in gas_combo_text or "Krypton" in gas_combo_text:
+        elif "Krypton" in gas_combo_text or "Kriptón" in gas_combo_text:
             gas = "Krypton"
         else:
             gas = "Xenon"
@@ -232,30 +250,50 @@ class SimulationOptionsPanel(QWidget):
         new_params = (N_particles, frames, alpha, sigma_ion, dt, gas, self.enable_checkbox.isChecked())
 
         if new_params != self.simulation_state.prev_params_simulation:
-            print("🔄 Parámetros de simulación cambiaron:", new_params)
+            print("Simulation parameters changed:", new_params)
             self.simulation_state.prev_params_simulation = new_params
             self.simulation_state.save_to_json(model("simulation_state.json"))
-            self.progress_bar.start("Ejecutando simulación...")
+            self.progress_bar.start("Running simulation...")
             self.run_solver_in_subprocess()
         else:
             from PySide6.QtWidgets import QMessageBox
-            print("⚠️ No se han realizado cambios en los parámetros de simulación.")
+            print("No changes detected in simulation parameters.")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
-            msg.setWindowTitle("Sin cambios detectados")
-            msg.setText("Debe cambiar los parámetros para ejecutar una nueva simulación.")
+            msg.setWindowTitle("No changes detected")
+            msg.setText("You must change the parameters to run a new simulation.")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.setStyleSheet("QLabel{min-width: 300px;}")
+            msg.setStyleSheet(messagebox_style())
             msg.exec()
 
     def update_simulate_button_state(self):
-        """Deshabilita el botón si alguno de los campos está desactualizado."""
-        if self.simulation_state.field_outdated or self.simulation_state.magnetic_outdated:
-            self.start_btn.setEnabled(False)
-            self.start_btn.setToolTip("Actualice el campo eléctrico y magnético antes de simular.")
+        """Keep the start button enabled; missing prerequisites are surfaced
+        as a card on click and via the inline banner."""
+        self.start_btn.setEnabled(True)
+        self.start_btn.setToolTip("Start or resume the particle simulation.")
+
+    def _missing_prerequisites_message(self) -> str | None:
+        state = self.simulation_state
+        if state.field_outdated and state.magnetic_outdated:
+            return ("The electric field and the magnetic field must be updated "
+                    "before running a new particle simulation.")
+        if state.field_outdated:
+            return "The electric field must be updated before running a new simulation."
+        if state.magnetic_outdated:
+            return "The magnetic field must be updated before running a new simulation."
+        return None
+
+    def refresh_banner(self):
+        msg = self._missing_prerequisites_message()
+        if msg:
+            self.dependency_banner.set_content(
+                title="Prerequisites required",
+                message=msg,
+                level="warning",
+            )
+            self.dependency_banner.show()
         else:
-            self.start_btn.setEnabled(True)
-            self.start_btn.setToolTip("Inicia o reanuda la simulación de partículas.")
+            self.dependency_banner.hide()
 
     def validar_numeros(self, campos, opcionales=None):
         if opcionales is None:
@@ -270,11 +308,11 @@ class SimulationOptionsPanel(QWidget):
                     resultados[nombre] = None
                     continue
                 else:
-                    raise ValueError(f"El campo '{nombre}' es obligatorio y está vacío.")
+                    raise ValueError(f"Field '{nombre}' is required and is empty.")
             try:
                 valor = float(texto)
             except ValueError:
-                raise ValueError(f"El campo '{nombre}' debe ser un número válido. Valor recibido: '{texto}'")
+                raise ValueError(f"Field '{nombre}' must be a valid number. Received: '{texto}'")
             resultados[nombre] = valor
         return resultados
 
@@ -291,11 +329,12 @@ class SimulationOptionsPanel(QWidget):
             self.process_finished = False
             print(f"[DEBUG] Proceso lanzado, PID: {self.process.pid}")
         except Exception as e:
-            print(f"[ERROR] Fallo al lanzar el proceso: {e}")
+            print(f"[ERROR] Failed to launch subprocess: {e}")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Critical)
-            msg.setWindowTitle("Error al lanzar el subproceso")
-            msg.setText(f"No se pudo iniciar el solver: {e}")
+            msg.setWindowTitle("Subprocess launch error")
+            msg.setText(f"Could not start the solver: {e}")
+            msg.setStyleSheet(messagebox_style())
             msg.exec()
             self.process = None
             self.start_btn.setEnabled(True)
@@ -320,36 +359,38 @@ class SimulationOptionsPanel(QWidget):
                 if exit_code != 0:
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Critical)
-                    msg.setWindowTitle("Error en el solver")
-                    msg.setText(f"El solver finalizó con error (código {exit_code}) después de {elapsed:.2f} s.")
-                    msg.setDetailedText(stderr if stderr else "No se recibió salida de error.")
+                    msg.setWindowTitle("Solver error")
+                    msg.setText(f"The solver failed with exit code {exit_code} after {elapsed:.2f} s.")
+                    msg.setDetailedText(stderr if stderr else "No error output was received.")
+                    msg.setStyleSheet(messagebox_style())
                     msg.exec()
                     self.start_btn.setEnabled(True)
                     self.progress_bar.finish()
-                    print(f"[ERROR] Solver falló: {stderr}")
-                    self.label_impulso.setText("Impulso específico: <b>N/A</b>")
-                    self.label_tiempo.setText("Tiempo de simulación: <b>N/A</b>")
-                    self.label_frames.setText(f"Número de frames: <b>{self.simulation_state.frames}</b>")
+                    print(f"[ERROR] Solver failed: {stderr}")
+                    self.label_impulso.setText("Specific impulse: <b>N/A</b>")
+                    self.label_tiempo.setText("Simulation time: <b>N/A</b>")
+                    self.label_frames.setText(f"Frame count: <b>{self.simulation_state.frames}</b>")
                     self.simulation_state.prev_params_simulation = [None] * len(self.simulation_state.prev_params_simulation)
                     return
-                print(f"[INFO] Solver terminado exitosamente en {elapsed:.2f} s")
+                print(f"[INFO] Solver finished successfully in {elapsed:.2f} s")
                 self._reload_shared_state()
                 try:
                     self.simulation_state.time_simulation = elapsed
                     self.simulation_state.save_to_json(model("simulation_state.json"))
                 except Exception as e:
-                    print(f"[ERROR] No se pudieron leer los resultados: {e}")
+                    print(f"[ERROR] Could not read results: {e}")
                     self.simulation_state.impulso_especifico = "N/A"
-                self.label_impulso.setText(f"Impulso específico: <b>{self.simulation_state.impulso_especifico} s</b>")
-                self.label_tiempo.setText(f"Tiempo de simulación: <b>{elapsed:.2f} s</b>")
-                self.label_frames.setText(f"Número de frames: <b>{self.simulation_state.frames}</b>")
+                self.label_impulso.setText(f"Specific impulse: <b>{self.simulation_state.impulso_especifico} s</b>")
+                self.label_tiempo.setText(f"Simulation time: <b>{elapsed:.2f} s</b>")
+                self.label_frames.setText(f"Frame count: <b>{self.simulation_state.frames}</b>")
                 self.simulation_instance.reload_data()
                 self.simulation_instance.refresh_particles()
 
                 msg = QMessageBox(self)
                 msg.setIcon(QMessageBox.Information)
-                msg.setWindowTitle("Simulación completada (Simulación)")
-                msg.setText("✅ El solver se completó correctamente.\nApp is ready.")
+                msg.setWindowTitle("Simulation completed")
+                msg.setText("The solver finished successfully.\nApp is ready.")
+                msg.setStyleSheet(messagebox_style())
                 msg.exec()
 
         self.timer = QTimer()

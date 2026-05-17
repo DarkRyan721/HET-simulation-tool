@@ -1,27 +1,29 @@
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QCheckBox, QPushButton, QHBoxLayout
 
-from gui_styles.stylesheets import button_parameters_style
+from gui_styles.stylesheets import button_parameters_style, box_render_style, checkbox_style
 
 class SolenoidPointsControlPanel(QGroupBox):
     def __init__(self, parent=None):
-        super().__init__("Opciones de Visualización de Solenoides", parent)
+        super().__init__("Solenoid visualization", parent)
+        self.setStyleSheet(box_render_style())
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
 
-        # Checkboxes para cada solenoide
-        self.cb_inner = QCheckBox("Solenoide Interno")
+        self.cb_inner = QCheckBox("Inner solenoid")
         self.cb_inner.setChecked(True)
-        self.cb_1 = QCheckBox("Solenoide 1")
+        self.cb_1 = QCheckBox("Solenoid 1")
         self.cb_1.setChecked(True)
-        self.cb_2 = QCheckBox("Solenoide 2")
+        self.cb_2 = QCheckBox("Solenoid 2")
         self.cb_2.setChecked(True)
-        self.cb_3 = QCheckBox("Solenoide 3")
+        self.cb_3 = QCheckBox("Solenoid 3")
         self.cb_3.setChecked(True)
-        self.cb_4 = QCheckBox("Solenoide 4")
+        self.cb_4 = QCheckBox("Solenoid 4")
         self.cb_4.setChecked(True)
-        self.cb_cylinder = QCheckBox("Cilindro Externo")
+        self.cb_cylinder = QCheckBox("Outer cylinder")
         self.cb_cylinder.setChecked(True)
+        for cb in (self.cb_inner, self.cb_1, self.cb_2, self.cb_3, self.cb_4, self.cb_cylinder):
+            cb.setStyleSheet(checkbox_style())
 
-        # Crear las filas de checkboxes
         row1 = QHBoxLayout()
         row1.addWidget(self.cb_inner)
         row1.addWidget(self.cb_1)
@@ -32,12 +34,10 @@ class SolenoidPointsControlPanel(QGroupBox):
         row2.addWidget(self.cb_4)
         row2.addWidget(self.cb_cylinder)
 
-        # Añadir filas al layout principal
         layout.addLayout(row1)
         layout.addLayout(row2)
 
-        # Botón para actualizar gráfico
-        self.btn_update = QPushButton("Actualizar Gráfico")
+        self.btn_update = QPushButton("Update plot")
         self.btn_update.setStyleSheet(button_parameters_style())
         layout.addWidget(self.btn_update)
 
